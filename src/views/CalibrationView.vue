@@ -71,26 +71,24 @@ function averageFeatures(): GazeFeatures | null {
   const avg: GazeFeatures = {
     leftGaze: { x: 0, y: 0 },
     rightGaze: { x: 0, y: 0 },
-    faceCenter: { x: 0, y: 0 },
-    ipd: 0,
+    headYaw: 0,
+    headPitch: 0,
   };
   for (const gf of gazeBuffer) {
     avg.leftGaze.x += gf.leftGaze.x;
     avg.leftGaze.y += gf.leftGaze.y;
     avg.rightGaze.x += gf.rightGaze.x;
     avg.rightGaze.y += gf.rightGaze.y;
-    avg.faceCenter.x += gf.faceCenter.x;
-    avg.faceCenter.y += gf.faceCenter.y;
-    avg.ipd += gf.ipd;
+    avg.headYaw += gf.headYaw;
+    avg.headPitch += gf.headPitch;
   }
   const n = gazeBuffer.length;
   avg.leftGaze.x /= n;
   avg.leftGaze.y /= n;
   avg.rightGaze.x /= n;
   avg.rightGaze.y /= n;
-  avg.faceCenter.x /= n;
-  avg.faceCenter.y /= n;
-  avg.ipd /= n;
+  avg.headYaw /= n;
+  avg.headPitch /= n;
   return avg;
 }
 

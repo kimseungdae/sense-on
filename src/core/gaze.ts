@@ -13,6 +13,10 @@ const RIGHT_EYE_TOP = 386;
 const RIGHT_EYE_BOTTOM = 374;
 
 const NOSE_TIP = 1;
+const LEFT_CHEEK = 234;
+const RIGHT_CHEEK = 454;
+const FOREHEAD = 10;
+const CHIN = 152;
 
 const MIN_LANDMARKS = 478;
 
@@ -58,28 +62,53 @@ export function computeGazeFeatures(landmarks: Point3D[]): GazeFeatures {
     return {
       leftGaze: { x: 0, y: 0 },
       rightGaze: { x: 0, y: 0 },
-      faceCenter: { x: 0.5, y: 0.5 },
-      ipd: 0,
+      headYaw: 0,
+      headPitch: 0,
     };
   }
 
   const li = landmarks[LEFT_IRIS_CENTER]!;
   const ri = landmarks[RIGHT_IRIS_CENTER]!;
+  const lIn = landmarks[LEFT_EYE_INNER]!;
+  const lOut = landmarks[LEFT_EYE_OUTER]!;
+  const rIn = landmarks[RIGHT_EYE_INNER]!;
+  const rOut = landmarks[RIGHT_EYE_OUTER]!;
   const nose = landmarks[NOSE_TIP]!;
+  const cheekL = landmarks[LEFT_CHEEK]!;
+  const cheekR = landmarks[RIGHT_CHEEK]!;
+  const forehead = landmarks[FOREHEAD]!;
+  const chin = landmarks[CHIN]!;
 
-  const ipd = Math.hypot(li.x - ri.x, li.y - ri.y);
-  const safeIpd = ipd > 0.001 ? ipd : 0.001;
+  // Eye centers and widths (head-invariant reference frame)
+  const lCenterX = (lIn.x + lOut.x) / 2;
+  const lCenterY = (lIn.y + lOut.y) / 2;
+  const lWidth = Math.hypot(lIn.x - lOut.x, lIn.y - lOut.y);
+  const safeLW = lWidth > 0.001 ? lWidth : 0.001;
+
+  const rCenterX = (rIn.x + rOut.x) / 2;
+  const rCenterY = (rIn.y + rOut.y) / 2;
+  const rWidth = Math.hypot(rIn.x - rOut.x, rIn.y - rOut.y);
+  const safeRW = rWidth > 0.001 ? rWidth : 0.001;
+
+  // Head pose from landmark geometry
+  const faceMidX = (cheekL.x + cheekR.x) / 2;
+  const faceWidth = Math.abs(cheekR.x - cheekL.x);
+  const safeFW = faceWidth > 0.001 ? faceWidth : 0.001;
+
+  const eyeMidY = (lCenterY + rCenterY) / 2;
+  const faceHeight = Math.abs(chin.y - forehead.y);
+  const safeFH = faceHeight > 0.001 ? faceHeight : 0.001;
 
   return {
     leftGaze: {
-      x: (li.x - nose.x) / safeIpd,
-      y: (li.y - nose.y) / safeIpd,
+      x: (li.x - lCenterX) / safeLW,
+      y: (li.y - lCenterY) / safeLW,
     },
     rightGaze: {
-      x: (ri.x - nose.x) / safeIpd,
-      y: (ri.y - nose.y) / safeIpd,
+      x: (ri.x - rCenterX) / safeRW,
+      y: (ri.y - rCenterY) / safeRW,
     },
-    faceCenter: { x: nose.x, y: nose.y },
-    ipd,
+    headYaw: (nose.x - faceMidX) / safeFW,
+    headPitch: (nose.y - eyeMidY) / safeFH,
   };
 }

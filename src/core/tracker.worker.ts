@@ -6,8 +6,8 @@ type EulerAngles = { yaw: number; pitch: number; roll: number };
 type GazeFeatures = {
   leftGaze: Point2D;
   rightGaze: Point2D;
-  faceCenter: Point2D;
-  ipd: number;
+  headYaw: number;
+  headPitch: number;
 };
 
 interface TrackingResult {
@@ -29,29 +29,57 @@ type WorkerOutMsg =
   | { type: "result"; id: number; data: TrackingResult }
   | { type: "error"; message: string };
 
-// --- Inline: gaze features ---
+// --- Inline: gaze features (eye-in-head + landmark head pose) ---
 function computeGazeFeatures(landmarks: Point3D[]): GazeFeatures {
   if (landmarks.length < 478) {
     return {
       leftGaze: { x: 0, y: 0 },
       rightGaze: { x: 0, y: 0 },
-      faceCenter: { x: 0.5, y: 0.5 },
-      ipd: 0,
+      headYaw: 0,
+      headPitch: 0,
     };
   }
   const li = landmarks[468]!;
   const ri = landmarks[473]!;
+  const lIn = landmarks[133]!;
+  const lOut = landmarks[33]!;
+  const rIn = landmarks[362]!;
+  const rOut = landmarks[263]!;
   const nose = landmarks[1]!;
-  const ipd = Math.hypot(li.x - ri.x, li.y - ri.y);
-  const safeIpd = ipd > 0.001 ? ipd : 0.001;
+  const cheekL = landmarks[234]!;
+  const cheekR = landmarks[454]!;
+  const forehead = landmarks[10]!;
+  const chin = landmarks[152]!;
+
+  const lCenterX = (lIn.x + lOut.x) / 2;
+  const lCenterY = (lIn.y + lOut.y) / 2;
+  const lWidth = Math.hypot(lIn.x - lOut.x, lIn.y - lOut.y);
+  const safeLW = lWidth > 0.001 ? lWidth : 0.001;
+
+  const rCenterX = (rIn.x + rOut.x) / 2;
+  const rCenterY = (rIn.y + rOut.y) / 2;
+  const rWidth = Math.hypot(rIn.x - rOut.x, rIn.y - rOut.y);
+  const safeRW = rWidth > 0.001 ? rWidth : 0.001;
+
+  const faceMidX = (cheekL.x + cheekR.x) / 2;
+  const faceWidth = Math.abs(cheekR.x - cheekL.x);
+  const safeFW = faceWidth > 0.001 ? faceWidth : 0.001;
+
+  const eyeMidY = (lCenterY + rCenterY) / 2;
+  const faceHeight = Math.abs(chin.y - forehead.y);
+  const safeFH = faceHeight > 0.001 ? faceHeight : 0.001;
+
   return {
-    leftGaze: { x: (li.x - nose.x) / safeIpd, y: (li.y - nose.y) / safeIpd },
-    rightGaze: {
-      x: (ri.x - nose.x) / safeIpd,
-      y: (ri.y - nose.y) / safeIpd,
+    leftGaze: {
+      x: (li.x - lCenterX) / safeLW,
+      y: (li.y - lCenterY) / safeLW,
     },
-    faceCenter: { x: nose.x, y: nose.y },
-    ipd,
+    rightGaze: {
+      x: (ri.x - rCenterX) / safeRW,
+      y: (ri.y - rCenterY) / safeRW,
+    },
+    headYaw: (nose.x - faceMidX) / safeFW,
+    headPitch: (nose.y - eyeMidY) / safeFH,
   };
 }
 
@@ -158,8 +186,8 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
         gazeFeatures: {
           leftGaze: { x: 0, y: 0 },
           rightGaze: { x: 0, y: 0 },
-          faceCenter: { x: 0.5, y: 0.5 },
-          ipd: 0,
+          headYaw: 0,
+          headPitch: 0,
         },
         inferenceMs,
         timestamp,

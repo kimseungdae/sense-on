@@ -18,8 +18,8 @@ export interface EulerAngles {
 export interface GazeFeatures {
   leftGaze: Point2D;
   rightGaze: Point2D;
-  faceCenter: Point2D;
-  ipd: number;
+  headYaw: number;
+  headPitch: number;
 }
 
 export interface TrackingResult {

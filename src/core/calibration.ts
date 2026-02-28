@@ -21,8 +21,8 @@ function toFeatureVector(gf: GazeFeatures): number[] {
     gf.leftGaze.y,
     gf.rightGaze.x,
     gf.rightGaze.y,
-    gf.faceCenter.x,
-    gf.faceCenter.y,
+    gf.headYaw,
+    gf.headPitch,
   ];
 }
 

@@ -1,4 +1,3 @@
-import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 import { computeGazeRatio } from "./gaze";
 import { matrixToEuler } from "./head-pose";
 import type {
@@ -8,11 +7,16 @@ import type {
   Point3D,
 } from "./types";
 
-let faceLandmarker: FaceLandmarker | null = null;
+// Polyfill: MediaPipe calls self.import() to load WASM,
+// but import() is syntax, not a property of self in module workers
+(self as any).import ??= (url: string) => import(/* @vite-ignore */ url);
+
+let faceLandmarker: any = null;
 
 async function init(wasmPath: string, modelPath: string) {
-  const vision = await FilesetResolver.forVisionTasks(wasmPath);
-  faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+  const mp = await import("@mediapipe/tasks-vision");
+  const vision = await mp.FilesetResolver.forVisionTasks(wasmPath);
+  faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: modelPath,
       delegate: "GPU",

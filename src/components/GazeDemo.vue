@@ -111,14 +111,16 @@ function handleResult(data: TrackingResult) {
   frameCount++;
   inferenceMs.value = Math.round(data.inferenceMs);
 
-  const filtered = gazeFilter.filter(data.gazeRatio, data.timestamp);
+  const gaze = data.gazeRatio ?? { x: 0, y: 0 };
+  const filtered = gazeFilter.filter(gaze, data.timestamp);
   const clamp = (v: number) => Math.max(-1, Math.min(1, v));
   gazeX.value = clamp(filtered.x * GAZE_GAIN);
   gazeY.value = clamp(filtered.y * GAZE_GAIN);
 
-  headYaw.value = Math.round(data.headPose.yaw);
-  headPitch.value = Math.round(data.headPose.pitch);
-  headRoll.value = Math.round(data.headPose.roll);
+  const hp = data.headPose ?? { yaw: 0, pitch: 0, roll: 0 };
+  headYaw.value = Math.round(hp.yaw);
+  headPitch.value = Math.round(hp.pitch);
+  headRoll.value = Math.round(hp.roll);
 
   // Draw face wireframe
   if (data.landmarks && canvas.value) {

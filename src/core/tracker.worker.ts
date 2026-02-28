@@ -3,10 +3,17 @@ declare function importScripts(...urls: string[]): void;
 type Point3D = { x: number; y: number; z: number };
 type Point2D = { x: number; y: number };
 type EulerAngles = { yaw: number; pitch: number; roll: number };
+type GazeFeatures = {
+  leftGaze: Point2D;
+  rightGaze: Point2D;
+  faceCenter: Point2D;
+  ipd: number;
+};
 
 interface TrackingResult {
-  gazeRatio: Point2D;
-  headPose: EulerAngles;
+  gazeFeatures: GazeFeatures;
+  gazeRatio?: Point2D;
+  headPose?: EulerAngles;
   landmarks?: Point3D[];
   inferenceMs: number;
   timestamp: number;
@@ -22,7 +29,33 @@ type WorkerOutMsg =
   | { type: "result"; id: number; data: TrackingResult }
   | { type: "error"; message: string };
 
-// --- Inline: gaze ratio ---
+// --- Inline: gaze features ---
+function computeGazeFeatures(landmarks: Point3D[]): GazeFeatures {
+  if (landmarks.length < 478) {
+    return {
+      leftGaze: { x: 0, y: 0 },
+      rightGaze: { x: 0, y: 0 },
+      faceCenter: { x: 0.5, y: 0.5 },
+      ipd: 0,
+    };
+  }
+  const li = landmarks[468]!;
+  const ri = landmarks[473]!;
+  const nose = landmarks[1]!;
+  const ipd = Math.hypot(li.x - ri.x, li.y - ri.y);
+  const safeIpd = ipd > 0.001 ? ipd : 0.001;
+  return {
+    leftGaze: { x: (li.x - nose.x) / safeIpd, y: (li.y - nose.y) / safeIpd },
+    rightGaze: {
+      x: (ri.x - nose.x) / safeIpd,
+      y: (ri.y - nose.y) / safeIpd,
+    },
+    faceCenter: { x: nose.x, y: nose.y },
+    ipd,
+  };
+}
+
+// --- Inline: gaze ratio (for GazeDemo backward compat) ---
 function computeGazeRatio(landmarks: Point3D[]): Point2D {
   if (landmarks.length < 478) return { x: 0, y: 0 };
   const li = landmarks[468]!,
@@ -46,7 +79,7 @@ function computeGazeRatio(landmarks: Point3D[]): Point2D {
   return { x: lRx + rRx - 1, y: lRy + rRy - 1 };
 }
 
-// --- Inline: head pose ---
+// --- Inline: head pose (for GazeDemo backward compat) ---
 function matrixToEuler(m: number[]): EulerAngles {
   const clamp = (v: number, lo: number, hi: number) =>
     v < lo ? lo : v > hi ? hi : v;
@@ -122,8 +155,12 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
       type: "result",
       id,
       data: {
-        gazeRatio: { x: 0, y: 0 },
-        headPose: { yaw: 0, pitch: 0, roll: 0 },
+        gazeFeatures: {
+          leftGaze: { x: 0, y: 0 },
+          rightGaze: { x: 0, y: 0 },
+          faceCenter: { x: 0.5, y: 0.5 },
+          ipd: 0,
+        },
         inferenceMs,
         timestamp,
       },
@@ -132,6 +169,7 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
   }
 
   const landmarks: Point3D[] = result.faceLandmarks[0];
+  const gazeFeatures = computeGazeFeatures(landmarks);
   const gazeRatio = computeGazeRatio(landmarks);
 
   let headPose: EulerAngles = { yaw: 0, pitch: 0, roll: 0 };
@@ -143,7 +181,14 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
   reply({
     type: "result",
     id,
-    data: { gazeRatio, headPose, landmarks, inferenceMs, timestamp },
+    data: {
+      gazeFeatures,
+      gazeRatio,
+      headPose,
+      landmarks,
+      inferenceMs,
+      timestamp,
+    },
   });
 }
 

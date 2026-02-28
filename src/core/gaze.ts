@@ -1,4 +1,4 @@
-import type { Point2D, Point3D } from "./types";
+import type { Point2D, Point3D, GazeFeatures } from "./types";
 
 const LEFT_EYE_INNER = 133;
 const LEFT_EYE_OUTER = 33;
@@ -11,6 +11,8 @@ const LEFT_EYE_TOP = 159;
 const LEFT_EYE_BOTTOM = 145;
 const RIGHT_EYE_TOP = 386;
 const RIGHT_EYE_BOTTOM = 374;
+
+const NOSE_TIP = 1;
 
 const MIN_LANDMARKS = 478;
 
@@ -49,4 +51,35 @@ export function computeGazeRatio(landmarks: Point3D[]): Point2D {
   const gazeY = lRatioY + rRatioY - 1;
 
   return { x: gazeX, y: gazeY };
+}
+
+export function computeGazeFeatures(landmarks: Point3D[]): GazeFeatures {
+  if (landmarks.length < MIN_LANDMARKS) {
+    return {
+      leftGaze: { x: 0, y: 0 },
+      rightGaze: { x: 0, y: 0 },
+      faceCenter: { x: 0.5, y: 0.5 },
+      ipd: 0,
+    };
+  }
+
+  const li = landmarks[LEFT_IRIS_CENTER]!;
+  const ri = landmarks[RIGHT_IRIS_CENTER]!;
+  const nose = landmarks[NOSE_TIP]!;
+
+  const ipd = Math.hypot(li.x - ri.x, li.y - ri.y);
+  const safeIpd = ipd > 0.001 ? ipd : 0.001;
+
+  return {
+    leftGaze: {
+      x: (li.x - nose.x) / safeIpd,
+      y: (li.y - nose.y) / safeIpd,
+    },
+    rightGaze: {
+      x: (ri.x - nose.x) / safeIpd,
+      y: (ri.y - nose.y) / safeIpd,
+    },
+    faceCenter: { x: nose.x, y: nose.y },
+    ipd,
+  };
 }

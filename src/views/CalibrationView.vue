@@ -9,7 +9,7 @@ import {
   type CalibrationSample,
   type GazeTransform,
 } from '../core/calibration';
-import type { Point2D } from '../core/types';
+import type { Point2D, GazeFeatures } from '../core/types';
 
 const router = useRouter();
 const { onResult, status } = useTracker();
@@ -63,29 +63,34 @@ const totalCount = computed(() => {
 const STABILIZE_MS = 500;
 const COLLECT_MS_P1 = 2000;
 const COLLECT_MS_P2 = 1500;
-interface GazeSample {
-  gaze: Point2D;
-  yaw: number;
-  pitch: number;
-}
-
-let gazeBuffer: GazeSample[] = [];
+let gazeBuffer: GazeFeatures[] = [];
 let resultUnsub: (() => void) | null = null;
 
-function averageGaze(): GazeSample | null {
+function averageFeatures(): GazeFeatures | null {
   if (gazeBuffer.length === 0) return null;
-  const avg = { gaze: { x: 0, y: 0 }, yaw: 0, pitch: 0 };
-  for (const g of gazeBuffer) {
-    avg.gaze.x += g.gaze.x;
-    avg.gaze.y += g.gaze.y;
-    avg.yaw += g.yaw;
-    avg.pitch += g.pitch;
+  const avg: GazeFeatures = {
+    leftGaze: { x: 0, y: 0 },
+    rightGaze: { x: 0, y: 0 },
+    faceCenter: { x: 0, y: 0 },
+    ipd: 0,
+  };
+  for (const gf of gazeBuffer) {
+    avg.leftGaze.x += gf.leftGaze.x;
+    avg.leftGaze.y += gf.leftGaze.y;
+    avg.rightGaze.x += gf.rightGaze.x;
+    avg.rightGaze.y += gf.rightGaze.y;
+    avg.faceCenter.x += gf.faceCenter.x;
+    avg.faceCenter.y += gf.faceCenter.y;
+    avg.ipd += gf.ipd;
   }
   const n = gazeBuffer.length;
-  avg.gaze.x /= n;
-  avg.gaze.y /= n;
-  avg.yaw /= n;
-  avg.pitch /= n;
+  avg.leftGaze.x /= n;
+  avg.leftGaze.y /= n;
+  avg.rightGaze.x /= n;
+  avg.rightGaze.y /= n;
+  avg.faceCenter.x /= n;
+  avg.faceCenter.y /= n;
+  avg.ipd /= n;
   return avg;
 }
 
@@ -95,11 +100,7 @@ function collectAndCallback(collectMs: number, cb: () => void) {
   progress.value = 0;
 
   resultUnsub = onResult((data) => {
-    gazeBuffer.push({
-      gaze: data.gazeRatio,
-      yaw: data.headPose.yaw,
-      pitch: data.headPose.pitch,
-    });
+    gazeBuffer.push(data.gazeFeatures);
   });
 
   setTimeout(() => {
@@ -134,12 +135,10 @@ function phase1ScreenPos(): Point2D {
 
 function startPhase1Point() {
   collectAndCallback(COLLECT_MS_P1, () => {
-    const avg = averageGaze();
+    const avg = averageFeatures();
     if (avg) {
       samples.value.push({
-        gaze: avg.gaze,
-        yaw: avg.yaw,
-        pitch: avg.pitch,
+        features: avg,
         screen: phase1ScreenPos(),
       });
     }
@@ -198,15 +197,14 @@ function generateRandomPoint() {
 function startPhase2Round() {
   lastResult.value = null;
   collectAndCallback(COLLECT_MS_P2, () => {
-    const avg = averageGaze();
+    const avg = averageFeatures();
     if (!avg || !currentTransform) {
-      // skip round
       generateRandomPoint();
       setTimeout(() => startPhase2Round(), 300);
       return;
     }
 
-    const predicted = applyGazeTransform(currentTransform, avg.gaze, avg.yaw, avg.pitch);
+    const predicted = applyGazeTransform(currentTransform, avg);
     const actual: Point2D = {
       x: validationPoint.value.x * window.innerWidth,
       y: validationPoint.value.y * window.innerHeight,
@@ -218,14 +216,8 @@ function startPhase2Round() {
     hitHistory.value.push(isHit);
     lastResult.value = isHit ? 'hit' : 'miss';
 
-    // On miss: add sample and recompute transform
     if (!isHit) {
-      samples.value.push({
-        gaze: avg.gaze,
-        yaw: avg.yaw,
-        pitch: avg.pitch,
-        screen: actual,
-      });
+      samples.value.push({ features: avg, screen: actual });
       currentTransform = computeGazeTransform(samples.value) ?? currentTransform;
     }
 

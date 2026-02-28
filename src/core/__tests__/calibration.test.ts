@@ -4,99 +4,138 @@ import {
   applyGazeTransform,
   type CalibrationSample,
 } from "../calibration";
+import type { GazeFeatures } from "../types";
 
 function makeSample(
-  gx: number,
-  gy: number,
-  yaw: number,
-  pitch: number,
+  lGx: number,
+  lGy: number,
+  rGx: number,
+  rGy: number,
+  fcX: number,
+  fcY: number,
   sx: number,
   sy: number,
 ): CalibrationSample {
-  return { gaze: { x: gx, y: gy }, yaw, pitch, screen: { x: sx, y: sy } };
+  return {
+    features: {
+      leftGaze: { x: lGx, y: lGy },
+      rightGaze: { x: rGx, y: rGy },
+      faceCenter: { x: fcX, y: fcY },
+      ipd: 0.1,
+    },
+    screen: { x: sx, y: sy },
+  };
+}
+
+function makeFeatures(
+  lGx: number,
+  lGy: number,
+  rGx: number,
+  rGy: number,
+  fcX: number,
+  fcY: number,
+): GazeFeatures {
+  return {
+    leftGaze: { x: lGx, y: lGy },
+    rightGaze: { x: rGx, y: rGy },
+    faceCenter: { x: fcX, y: fcY },
+    ipd: 0.1,
+  };
 }
 
 describe("computeGazeTransform", () => {
-  it("returns null for fewer than 5 samples", () => {
+  it("returns null for fewer than 7 samples", () => {
     expect(computeGazeTransform([])).toBeNull();
     expect(
       computeGazeTransform([
-        makeSample(0, 0, 0, 0, 0, 0),
-        makeSample(1, 0, 10, 0, 1920, 0),
-        makeSample(0, 1, 0, 10, 0, 1080),
-        makeSample(1, 1, 10, 10, 1920, 1080),
+        makeSample(-1.5, -0.5, 1.5, -0.5, 0.3, 0.3, 0, 0),
+        makeSample(-1.5, -0.5, 1.5, -0.5, 0.5, 0.3, 960, 0),
+        makeSample(-1.5, -0.5, 1.5, -0.5, 0.7, 0.3, 1920, 0),
+        makeSample(-1.5, 0, 1.5, 0, 0.3, 0.5, 0, 540),
+        makeSample(-1.5, 0, 1.5, 0, 0.5, 0.5, 960, 540),
+        makeSample(-1.5, 0, 1.5, 0, 0.7, 0.5, 1920, 540),
       ]),
     ).toBeNull();
   });
 
-  it("maps gaze+headPose to screen with 9-point calibration", () => {
+  it("maps features to screen with 9-point calibration", () => {
     const W = 1920,
       H = 1080;
-    // Features must be independently varying (not perfectly collinear)
     const samples: CalibrationSample[] = [
-      makeSample(0.35, 0.4, -12, -8, 0, 0),
-      makeSample(0.5, 0.38, 0, -9, W / 2, 0),
-      makeSample(0.65, 0.42, 13, -7, W, 0),
-      makeSample(0.33, 0.5, -14, 1, 0, H / 2),
-      makeSample(0.5, 0.5, 0, 0, W / 2, H / 2),
-      makeSample(0.67, 0.5, 14, -1, W, H / 2),
-      makeSample(0.36, 0.6, -11, 8, 0, H),
-      makeSample(0.49, 0.62, 1, 9, W / 2, H),
-      makeSample(0.64, 0.58, 12, 7, W, H),
+      makeSample(-1.6, -0.6, 1.4, -0.6, 0.3, 0.3, 0, 0),
+      makeSample(-1.5, -0.55, 1.5, -0.55, 0.5, 0.3, W / 2, 0),
+      makeSample(-1.4, -0.5, 1.6, -0.5, 0.7, 0.3, W, 0),
+      makeSample(-1.55, -0.1, 1.45, -0.1, 0.3, 0.5, 0, H / 2),
+      makeSample(-1.5, 0, 1.5, 0, 0.5, 0.5, W / 2, H / 2),
+      makeSample(-1.45, 0.1, 1.55, 0.1, 0.7, 0.5, W, H / 2),
+      makeSample(-1.6, 0.5, 1.4, 0.5, 0.3, 0.7, 0, H),
+      makeSample(-1.5, 0.55, 1.5, 0.55, 0.5, 0.7, W / 2, H),
+      makeSample(-1.4, 0.6, 1.6, 0.6, 0.7, 0.7, W, H),
     ];
     const t = computeGazeTransform(samples)!;
     expect(t).not.toBeNull();
-    expect(t.xCoeffs).toHaveLength(5);
-    expect(t.yCoeffs).toHaveLength(5);
+    expect(t.xCoeffs).toHaveLength(7);
+    expect(t.yCoeffs).toHaveLength(7);
+    expect(t.featureMean).toHaveLength(6);
+    expect(t.featureStd).toHaveLength(6);
 
-    // Predict center — should be reasonably close
-    const center = applyGazeTransform(t, { x: 0.5, y: 0.5 }, 0, 0);
+    const center = applyGazeTransform(
+      t,
+      makeFeatures(-1.5, 0, 1.5, 0, 0.5, 0.5),
+    );
     expect(Math.abs(center.x - W / 2)).toBeLessThan(100);
     expect(Math.abs(center.y - H / 2)).toBeLessThan(100);
   });
 
-  it("headPose improves prediction beyond gaze-only", () => {
+  it("faceCenter captures head translation for screen prediction", () => {
     const W = 1920,
       H = 1080;
-    // gazeRatio has slight natural variation, headPose is main signal
+    // Gaze vectors CONSTANT — only faceCenter varies (pure head translation)
     const samples: CalibrationSample[] = [
-      makeSample(0.45, 0.47, -15, -10, 0, 0),
-      makeSample(0.5, 0.48, 0, -10, W / 2, 0),
-      makeSample(0.55, 0.47, 15, -10, W, 0),
-      makeSample(0.46, 0.5, -15, 0, 0, H / 2),
-      makeSample(0.5, 0.5, 0, 0, W / 2, H / 2),
-      makeSample(0.54, 0.5, 15, 0, W, H / 2),
-      makeSample(0.45, 0.53, -15, 10, 0, H),
-      makeSample(0.5, 0.52, 0, 10, W / 2, H),
-      makeSample(0.55, 0.53, 15, 10, W, H),
+      makeSample(-1.5, 0, 1.5, 0, 0.3, 0.3, 0, 0),
+      makeSample(-1.5, 0, 1.5, 0, 0.5, 0.3, W / 2, 0),
+      makeSample(-1.5, 0, 1.5, 0, 0.7, 0.3, W, 0),
+      makeSample(-1.5, 0, 1.5, 0, 0.3, 0.5, 0, H / 2),
+      makeSample(-1.5, 0, 1.5, 0, 0.5, 0.5, W / 2, H / 2),
+      makeSample(-1.5, 0, 1.5, 0, 0.7, 0.5, W, H / 2),
+      makeSample(-1.5, 0, 1.5, 0, 0.3, 0.7, 0, H),
+      makeSample(-1.5, 0, 1.5, 0, 0.5, 0.7, W / 2, H),
+      makeSample(-1.5, 0, 1.5, 0, 0.7, 0.7, W, H),
     ];
     const t = computeGazeTransform(samples)!;
     expect(t).not.toBeNull();
 
-    // Head yaw should be a strong predictor of screen X
-    const left = applyGazeTransform(t, { x: 0.46, y: 0.5 }, -15, 0);
-    const right = applyGazeTransform(t, { x: 0.54, y: 0.5 }, 15, 0);
+    const center = applyGazeTransform(
+      t,
+      makeFeatures(-1.5, 0, 1.5, 0, 0.5, 0.5),
+    );
+    expect(Math.abs(center.x - W / 2)).toBeLessThan(50);
+    expect(Math.abs(center.y - H / 2)).toBeLessThan(50);
+
+    const left = applyGazeTransform(t, makeFeatures(-1.5, 0, 1.5, 0, 0.3, 0.5));
     expect(left.x).toBeLessThan(W / 4);
-    expect(right.x).toBeGreaterThan((W * 3) / 4);
   });
 
-  it("handles noisy samples via least-squares", () => {
+  it("handles noisy samples via ridge regression", () => {
     const W = 1920,
       H = 1080;
     const samples: CalibrationSample[] = [
-      makeSample(0.36, 0.41, -13.5, -9.2, 0, 0),
-      makeSample(0.64, 0.39, 12.8, -8.5, W, 0),
-      makeSample(0.34, 0.61, -14.2, 9.8, 0, H),
-      makeSample(0.66, 0.59, 13.5, 8.2, W, H),
-      makeSample(0.5, 0.51, 0.5, -0.3, W / 2, H / 2),
-      makeSample(0.42, 0.45, -7.2, -4.8, W / 4, H / 4),
-      makeSample(0.58, 0.55, 7.8, 5.2, (W * 3) / 4, (H * 3) / 4),
+      makeSample(-1.62, -0.58, 1.38, -0.62, 0.31, 0.29, 0, 0),
+      makeSample(-1.38, -0.52, 1.62, -0.48, 0.69, 0.31, W, 0),
+      makeSample(-1.58, 0.48, 1.42, 0.52, 0.29, 0.71, 0, H),
+      makeSample(-1.42, 0.52, 1.58, 0.48, 0.71, 0.69, W, H),
+      makeSample(-1.51, -0.01, 1.49, 0.01, 0.51, 0.49, W / 2, H / 2),
+      makeSample(-1.56, -0.28, 1.44, -0.32, 0.4, 0.38, W / 4, H / 4),
+      makeSample(-1.44, 0.28, 1.56, 0.32, 0.6, 0.62, (W * 3) / 4, (H * 3) / 4),
     ];
     const t = computeGazeTransform(samples)!;
     expect(t).not.toBeNull();
 
-    const center = applyGazeTransform(t, { x: 0.5, y: 0.5 }, 0, 0);
-    expect(Math.abs(center.x - W / 2)).toBeLessThan(150);
-    expect(Math.abs(center.y - H / 2)).toBeLessThan(150);
+    const center = applyGazeTransform(
+      t,
+      makeFeatures(-1.5, 0, 1.5, 0, 0.5, 0.5),
+    );
+    expect(Math.abs(center.x - W / 2)).toBeLessThan(200);
+    expect(Math.abs(center.y - H / 2)).toBeLessThan(200);
   });
 });

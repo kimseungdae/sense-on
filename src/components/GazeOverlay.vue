@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { useTracker } from '../composables/useTracker';
 import { useCalibration } from '../composables/useCalibration';
 import { applyGazeTransform } from '../core/calibration';
+import { createPointFilter } from '../core/filter';
 
 const COLS = 32;
 const ROWS = 32;
@@ -35,6 +36,7 @@ function clamp(v: number, lo: number, hi: number) {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+const screenFilter = createPointFilter({ minCutoff: 1.5, beta: 0.5 });
 let unsub: (() => void) | null = null;
 
 onMounted(() => {
@@ -43,7 +45,8 @@ onMounted(() => {
 
   unsub = onResult((data) => {
     if (!transform.value) return;
-    const pos = applyGazeTransform(transform.value, data.gazeRatio, data.headPose.yaw, data.headPose.pitch);
+    const rawPos = applyGazeTransform(transform.value, data.gazeFeatures);
+    const pos = screenFilter.filter(rawPos, data.timestamp);
 
     const col = clamp(Math.floor(pos.x / cellW.value), 0, COLS - 1);
     const row = clamp(Math.floor(pos.y / cellH.value), 0, ROWS - 1);

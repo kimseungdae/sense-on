@@ -15,9 +15,17 @@ export interface EulerAngles {
   roll: number;
 }
 
+export interface GazeFeatures {
+  leftGaze: Point2D;
+  rightGaze: Point2D;
+  faceCenter: Point2D;
+  ipd: number;
+}
+
 export interface TrackingResult {
-  gazeRatio: Point2D;
-  headPose: EulerAngles;
+  gazeFeatures: GazeFeatures;
+  gazeRatio?: Point2D;
+  headPose?: EulerAngles;
   landmarks?: Point3D[];
   inferenceMs: number;
   timestamp: number;

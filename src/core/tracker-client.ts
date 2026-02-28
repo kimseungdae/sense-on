@@ -22,9 +22,7 @@ export function createTrackerClient(
   const wasmPath = options.wasmPath ?? DEFAULT_WASM_PATH;
   const modelPath = options.modelPath ?? DEFAULT_MODEL_PATH;
 
-  const worker = new Worker(new URL("./tracker.worker.ts", import.meta.url), {
-    type: "module",
-  });
+  const worker = new Worker(new URL("./tracker.worker.ts", import.meta.url));
 
   let nextId = 0;
   let latestSentId = -1;

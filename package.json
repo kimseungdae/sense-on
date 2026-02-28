@@ -41,7 +41,8 @@
     }
   },
   "dependencies": {
-    "vue": "^3.5.25"
+    "vue": "^3.3.0",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@mediapipe/tasks-vision": "^0.10.32",

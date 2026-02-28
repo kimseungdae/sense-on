@@ -91,9 +91,16 @@ function matrixToEuler(m: number[]): EulerAngles {
 let faceLandmarker: any = null;
 
 async function init(wasmPath: string, modelPath: string) {
-  importScripts(`${wasmPath.replace(/\/wasm\/?$/, "")}/vision_bundle.js`);
-  const vision = await self.FilesetResolver.forVisionTasks(wasmPath);
-  faceLandmarker = await self.FaceLandmarker.createFromOptions(vision, {
+  // CJS shim: vision_bundle.cjs writes to module.exports
+  const g = self as any;
+  g.exports = {};
+  g.module = { exports: g.exports };
+  const cdnBase = wasmPath.replace(/\/wasm\/?$/, "");
+  importScripts(`${cdnBase}/vision_bundle.cjs`);
+  const mp = g.module.exports;
+
+  const vision = await mp.FilesetResolver.forVisionTasks(wasmPath);
+  faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: modelPath,
       delegate: "GPU",

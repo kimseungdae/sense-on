@@ -1,20 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import GazeOverlay from '../components/GazeOverlay.vue';
 import { useTracker } from '../composables/useTracker';
 import { useCalibration } from '../composables/useCalibration';
-import { applyTransform } from '../core/calibration';
 
 const router = useRouter();
-const { onResult, status, stop } = useTracker();
+const { status, stop } = useTracker();
 const { transform, clear } = useCalibration();
 
 const activeLineIndex = ref(-1);
 const lineEls = ref<HTMLElement[]>([]);
 const contentEl = ref<HTMLElement | null>(null);
-
-let unsub: (() => void) | null = null;
 
 const paragraphs = [
   'The human visual system is one of the most complex sensory systems in the body. Light enters through the cornea, passes through the pupil, and is focused by the lens onto the retina at the back of the eye.',
@@ -43,8 +40,14 @@ function findActiveLine(screenY: number) {
     }
   }
 
-  // Only highlight if within reasonable distance (60px)
-  activeLineIndex.value = minDist < 60 ? closest : -1;
+  // Only highlight if within reasonable distance (80px for zone-based)
+  activeLineIndex.value = minDist < 80 ? closest : -1;
+}
+
+function onZone({ row }: { row: number; col: number }) {
+  const cellH = window.innerHeight / 32;
+  const centerY = (row + 0.5) * cellH;
+  findActiveLine(centerY);
 }
 
 function exitReader() {
@@ -66,22 +69,12 @@ onMounted(async () => {
   if (contentEl.value) {
     lineEls.value = Array.from(contentEl.value.querySelectorAll('.line'));
   }
-
-  unsub = onResult((data) => {
-    if (!transform.value) return;
-    const pos = applyTransform(transform.value, data.gazeRatio);
-    findActiveLine(pos.y);
-  });
-});
-
-onUnmounted(() => {
-  unsub?.();
 });
 </script>
 
 <template>
   <div class="reader">
-    <GazeOverlay />
+    <GazeOverlay @zone="onZone" />
 
     <header class="reader-header">
       <button class="exit-btn" @click="exitReader">✕ Exit</button>

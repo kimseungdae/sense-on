@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTracker } from '../composables/useTracker';
 import { useCalibration } from '../composables/useCalibration';
 import {
   computeAffineTransform,
+  applyTransform,
   type CalibrationSample,
+  type AffineTransform,
 } from '../core/calibration';
 import type { Point2D } from '../core/types';
 
@@ -13,7 +15,11 @@ const router = useRouter();
 const { onResult, status } = useTracker();
 const { setTransform } = useCalibration();
 
-// 9-point grid (3x3) with 10% padding
+// --- Phase state ---
+type Phase = 'intro' | 'phase1' | 'phase2' | 'done';
+const phase = ref<Phase>('intro');
+
+// --- Phase 1: 9-point grid ---
 const PADDING = 0.1;
 const GRID: Point2D[] = [];
 for (const row of [0, 0.5, 1]) {
@@ -25,26 +31,54 @@ for (const row of [0, 0.5, 1]) {
   }
 }
 
-const currentIndex = ref(-1); // -1 = intro
-const progress = ref(0); // 0..1 ring progress
+const currentIndex = ref(0);
+const progress = ref(0);
 const samples = ref<CalibrationSample[]>([]);
 const collecting = ref(false);
 
-// Gaze collection state
+// --- Phase 2: validation/refinement ---
+const WINDOW_SIZE = 10;
+const TARGET_RATE = 0.8;
+let currentTransform: AffineTransform | null = null;
+const validationPoint = ref<Point2D>({ x: 0.5, y: 0.5 });
+const hitHistory = ref<boolean[]>([]);
+const lastResult = ref<'hit' | 'miss' | null>(null);
+
+const hitRate = computed(() => {
+  if (hitHistory.value.length === 0) return 0;
+  const recent = hitHistory.value.slice(-WINDOW_SIZE);
+  return recent.filter(Boolean).length / recent.length;
+});
+
+const hitCount = computed(() => {
+  const recent = hitHistory.value.slice(-WINDOW_SIZE);
+  return recent.filter(Boolean).length;
+});
+
+const totalCount = computed(() => {
+  return Math.min(hitHistory.value.length, WINDOW_SIZE);
+});
+
+// --- Shared gaze collection ---
 const STABILIZE_MS = 500;
-const COLLECT_MS = 2000;
+const COLLECT_MS_P1 = 2000;
+const COLLECT_MS_P2 = 1500;
 let gazeBuffer: Point2D[] = [];
 let resultUnsub: (() => void) | null = null;
 
-function currentScreenPos(): Point2D {
-  const pt = GRID[currentIndex.value]!;
-  return {
-    x: pt.x * window.innerWidth,
-    y: pt.y * window.innerHeight,
-  };
+function averageGaze(): Point2D | null {
+  if (gazeBuffer.length === 0) return null;
+  const avg: Point2D = { x: 0, y: 0 };
+  for (const g of gazeBuffer) {
+    avg.x += g.x;
+    avg.y += g.y;
+  }
+  avg.x /= gazeBuffer.length;
+  avg.y /= gazeBuffer.length;
+  return avg;
 }
 
-function collectGaze() {
+function collectAndCallback(collectMs: number, cb: () => void) {
   gazeBuffer = [];
   collecting.value = true;
   progress.value = 0;
@@ -53,18 +87,14 @@ function collectGaze() {
     gazeBuffer.push(data.gazeRatio);
   });
 
-  // Stabilize phase
   setTimeout(() => {
-    gazeBuffer = []; // discard stabilize frames
+    gazeBuffer = [];
     const startTime = performance.now();
 
-    // Collection phase with progress animation
     const progressInterval = setInterval(() => {
       const elapsed = performance.now() - startTime;
-      progress.value = Math.min(elapsed / COLLECT_MS, 1);
-      if (progress.value >= 1) {
-        clearInterval(progressInterval);
-      }
+      progress.value = Math.min(elapsed / collectMs, 1);
+      if (progress.value >= 1) clearInterval(progressInterval);
     }, 16);
 
     setTimeout(() => {
@@ -73,56 +103,140 @@ function collectGaze() {
       resultUnsub = null;
       collecting.value = false;
       progress.value = 1;
-
-      // Average collected gaze samples
-      if (gazeBuffer.length > 0) {
-        const avg: Point2D = { x: 0, y: 0 };
-        for (const g of gazeBuffer) {
-          avg.x += g.x;
-          avg.y += g.y;
-        }
-        avg.x /= gazeBuffer.length;
-        avg.y /= gazeBuffer.length;
-
-        samples.value.push({
-          gaze: avg,
-          screen: currentScreenPos(),
-        });
-      }
-
-      nextPoint();
-    }, COLLECT_MS);
+      cb();
+    }, collectMs);
   }, STABILIZE_MS);
 }
 
-function nextPoint() {
-  currentIndex.value++;
-  if (currentIndex.value >= GRID.length) {
-    finishCalibration();
+// --- Phase 1 logic ---
+function phase1ScreenPos(): Point2D {
+  const pt = GRID[currentIndex.value]!;
+  return {
+    x: pt.x * window.innerWidth,
+    y: pt.y * window.innerHeight,
+  };
+}
+
+function startPhase1Point() {
+  collectAndCallback(COLLECT_MS_P1, () => {
+    const avg = averageGaze();
+    if (avg) {
+      samples.value.push({ gaze: avg, screen: phase1ScreenPos() });
+    }
+    currentIndex.value++;
+    if (currentIndex.value >= GRID.length) {
+      enterPhase2();
+    } else {
+      setTimeout(() => startPhase1Point(), 300);
+    }
+  });
+}
+
+function enterPhase2() {
+  currentTransform = computeAffineTransform(samples.value);
+  if (!currentTransform) {
+    // Rare: degenerate samples, restart
+    phase.value = 'intro';
+    samples.value = [];
     return;
   }
-  // Auto-start collection after brief delay
-  setTimeout(() => collectGaze(), 300);
+  phase.value = 'phase2';
+  hitHistory.value = [];
+  generateRandomPoint();
+  setTimeout(() => startPhase2Round(), 500);
+}
+
+// --- Phase 2 logic ---
+function hitThreshold(): number {
+  const diag = Math.sqrt(
+    window.innerWidth ** 2 + window.innerHeight ** 2,
+  );
+  return diag * 0.08;
+}
+
+let lastPoint: Point2D = { x: 0.5, y: 0.5 };
+
+function generateRandomPoint() {
+  const PAD = 0.15;
+  const minDist = 0.2;
+  let pt: Point2D;
+  let attempts = 0;
+  do {
+    pt = {
+      x: PAD + Math.random() * (1 - 2 * PAD),
+      y: PAD + Math.random() * (1 - 2 * PAD),
+    };
+    attempts++;
+  } while (
+    attempts < 20 &&
+    Math.hypot(pt.x - lastPoint.x, pt.y - lastPoint.y) < minDist
+  );
+  lastPoint = pt;
+  validationPoint.value = pt;
+}
+
+function startPhase2Round() {
+  lastResult.value = null;
+  collectAndCallback(COLLECT_MS_P2, () => {
+    const avg = averageGaze();
+    if (!avg || !currentTransform) {
+      // skip round
+      generateRandomPoint();
+      setTimeout(() => startPhase2Round(), 300);
+      return;
+    }
+
+    const predicted = applyTransform(currentTransform, avg);
+    const actual: Point2D = {
+      x: validationPoint.value.x * window.innerWidth,
+      y: validationPoint.value.y * window.innerHeight,
+    };
+
+    const dist = Math.hypot(predicted.x - actual.x, predicted.y - actual.y);
+    const isHit = dist < hitThreshold();
+
+    hitHistory.value.push(isHit);
+    lastResult.value = isHit ? 'hit' : 'miss';
+
+    // On miss: add sample and recompute transform
+    if (!isHit) {
+      samples.value.push({ gaze: avg, screen: actual });
+      currentTransform = computeAffineTransform(samples.value) ?? currentTransform;
+    }
+
+    // Check if we've reached target accuracy
+    const recent = hitHistory.value.slice(-WINDOW_SIZE);
+    if (
+      recent.length >= WINDOW_SIZE &&
+      recent.filter(Boolean).length / recent.length >= TARGET_RATE
+    ) {
+      finishCalibration();
+      return;
+    }
+
+    // Next round
+    setTimeout(() => {
+      generateRandomPoint();
+      setTimeout(() => startPhase2Round(), 300);
+    }, 400);
+  });
 }
 
 function finishCalibration() {
-  const transform = computeAffineTransform(samples.value);
-  if (transform) {
-    setTransform(transform);
-    router.push('/reader');
-  } else {
-    // Fallback: retry
-    samples.value = [];
-    currentIndex.value = -1;
+  if (currentTransform) {
+    phase.value = 'done';
+    setTransform(currentTransform);
+    setTimeout(() => router.push('/reader'), 500);
   }
 }
 
+// --- Start ---
 function startCalibration() {
-  // Request fullscreen
   document.documentElement.requestFullscreen?.().catch(() => {});
   samples.value = [];
   currentIndex.value = 0;
-  setTimeout(() => collectGaze(), 500);
+  phase.value = 'phase1';
+  setTimeout(() => startPhase1Point(), 500);
 }
 
 onMounted(() => {
@@ -138,17 +252,20 @@ onUnmounted(() => {
 
 <template>
   <div class="calibration">
-    <!-- Intro screen -->
-    <div v-if="currentIndex === -1" class="intro">
+    <!-- Intro -->
+    <div v-if="phase === 'intro'" class="intro">
       <h2>Gaze Calibration</h2>
-      <p>화면에 나타나는 점을 응시하세요.<br>총 9개 점을 순차적으로 측정합니다.</p>
+      <p>
+        화면에 나타나는 점을 응시하세요.<br>
+        9개 기본점 측정 후, 정확도 80%까지 자동 보정합니다.
+      </p>
       <button class="btn" @click="startCalibration">시작</button>
     </div>
 
-    <!-- Calibration points -->
-    <template v-else-if="currentIndex < GRID.length">
+    <!-- Phase 1: 9-point grid -->
+    <template v-else-if="phase === 'phase1'">
       <div class="status-bar">
-        <span>{{ currentIndex + 1 }} / {{ GRID.length }}</span>
+        <span>기본 측정 {{ currentIndex + 1 }} / {{ GRID.length }}</span>
         <span v-if="collecting" class="collecting-text">응시하세요...</span>
       </div>
 
@@ -161,31 +278,16 @@ onUnmounted(() => {
           top: pt.y * 100 + '%',
         }"
       >
-        <!-- Progress ring -->
-        <svg
-          v-if="i === currentIndex"
-          class="ring"
-          viewBox="0 0 44 44"
-        >
+        <svg v-if="i === currentIndex" class="ring" viewBox="0 0 44 44">
+          <circle cx="22" cy="22" r="18" fill="none" stroke="#333" stroke-width="3" />
           <circle
-            cx="22" cy="22" r="18"
-            fill="none"
-            stroke="#333"
-            stroke-width="3"
-          />
-          <circle
-            cx="22" cy="22" r="18"
-            fill="none"
-            stroke="#4fc3f7"
-            stroke-width="3"
+            cx="22" cy="22" r="18" fill="none" stroke="#4fc3f7" stroke-width="3"
             stroke-linecap="round"
             :stroke-dasharray="113.1"
             :stroke-dashoffset="113.1 * (1 - progress)"
             transform="rotate(-90 22 22)"
           />
         </svg>
-
-        <!-- Dot -->
         <div
           class="dot"
           :class="{
@@ -197,9 +299,60 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <!-- Completing -->
-    <div v-else class="intro">
-      <p>캘리브레이션 완료! 잠시만...</p>
+    <!-- Phase 2: validation/refinement -->
+    <template v-else-if="phase === 'phase2'">
+      <div class="status-bar phase2-bar">
+        <div class="accuracy-info">
+          <span>정확도</span>
+          <span class="accuracy-value" :class="{ good: hitRate >= TARGET_RATE }">
+            {{ Math.round(hitRate * 100) }}%
+          </span>
+          <span class="accuracy-detail">({{ hitCount }}/{{ totalCount }})</span>
+          <span class="accuracy-target">목표 80%</span>
+        </div>
+        <div class="accuracy-bar">
+          <div
+            class="accuracy-fill"
+            :class="{ good: hitRate >= TARGET_RATE }"
+            :style="{ width: hitRate * 100 + '%' }"
+          />
+          <div class="accuracy-threshold" />
+        </div>
+      </div>
+
+      <!-- Validation point -->
+      <div
+        class="point-wrapper"
+        :style="{
+          left: validationPoint.x * 100 + '%',
+          top: validationPoint.y * 100 + '%',
+        }"
+      >
+        <svg class="ring" viewBox="0 0 44 44">
+          <circle cx="22" cy="22" r="18" fill="none" stroke="#333" stroke-width="3" />
+          <circle
+            cx="22" cy="22" r="18" fill="none"
+            :stroke="lastResult === 'hit' ? '#66bb6a' : lastResult === 'miss' ? '#ef5350' : '#4fc3f7'"
+            stroke-width="3" stroke-linecap="round"
+            :stroke-dasharray="113.1"
+            :stroke-dashoffset="113.1 * (1 - progress)"
+            transform="rotate(-90 22 22)"
+          />
+        </svg>
+        <div class="dot active" />
+      </div>
+
+      <div class="phase2-hint">
+        <span v-if="collecting">점을 응시하세요...</span>
+        <span v-else-if="lastResult === 'hit'" class="result-hit">정확!</span>
+        <span v-else-if="lastResult === 'miss'" class="result-miss">보정 중...</span>
+      </div>
+    </template>
+
+    <!-- Done -->
+    <div v-else-if="phase === 'done'" class="intro">
+      <h2 class="done-title">캘리브레이션 완료!</h2>
+      <p>정확도 {{ Math.round(hitRate * 100) }}% 달성</p>
     </div>
   </div>
 </template>
@@ -221,17 +374,8 @@ onUnmounted(() => {
   color: #e6edf3;
 }
 
-.intro h2 {
-  font-size: 28px;
-  margin: 0 0 12px;
-}
-
-.intro p {
-  color: #888;
-  text-align: center;
-  line-height: 1.6;
-  margin: 0 0 24px;
-}
+.intro h2 { font-size: 28px; margin: 0 0 12px; }
+.intro p { color: #888; text-align: center; line-height: 1.6; margin: 0 0 24px; }
 
 .btn {
   padding: 12px 32px;
@@ -242,7 +386,6 @@ onUnmounted(() => {
   font-size: 16px;
   cursor: pointer;
 }
-
 .btn:hover { opacity: 0.85; }
 
 .status-bar {
@@ -257,9 +400,7 @@ onUnmounted(() => {
   z-index: 10;
 }
 
-.collecting-text {
-  color: #4fc3f7;
-}
+.collecting-text { color: #4fc3f7; }
 
 .point-wrapper {
   position: fixed;
@@ -303,5 +444,76 @@ onUnmounted(() => {
   height: 8px;
   top: -4px;
   left: -4px;
+}
+
+/* Phase 2 styles */
+.phase2-bar {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 280px;
+}
+
+.accuracy-info {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.accuracy-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ef5350;
+  transition: color 0.3s;
+}
+.accuracy-value.good { color: #66bb6a; }
+
+.accuracy-detail { color: #555; font-size: 12px; }
+.accuracy-target { color: #555; font-size: 12px; margin-left: 4px; }
+
+.accuracy-bar {
+  width: 100%;
+  height: 6px;
+  background: #1e2a3a;
+  border-radius: 3px;
+  position: relative;
+  overflow: visible;
+}
+
+.accuracy-fill {
+  height: 100%;
+  background: #ef5350;
+  border-radius: 3px;
+  transition: width 0.3s, background 0.3s;
+}
+.accuracy-fill.good { background: #66bb6a; }
+
+.accuracy-threshold {
+  position: absolute;
+  left: 80%;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: #888;
+  border-radius: 1px;
+}
+
+.phase2-hint {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 16px;
+  color: #888;
+}
+
+.result-hit { color: #66bb6a; font-weight: 600; }
+.result-miss { color: #ef5350; }
+
+.done-title {
+  background: linear-gradient(135deg, #4fc3f7, #66bb6a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 </style>

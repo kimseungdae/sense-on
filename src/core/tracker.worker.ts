@@ -1,3 +1,4 @@
+import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 import { computeGazeRatio } from "./gaze";
 import { matrixToEuler } from "./head-pose";
 import type {
@@ -7,22 +8,19 @@ import type {
   Point3D,
 } from "./types";
 
-let faceLandmarker: any = null;
+let faceLandmarker: FaceLandmarker | null = null;
 
 async function init(wasmPath: string, modelPath: string) {
-  const vision = await (self as any).FilesetResolver.forVisionTasks(wasmPath);
-  faceLandmarker = await (self as any).FaceLandmarker.createFromOptions(
-    vision,
-    {
-      baseOptions: {
-        modelAssetPath: modelPath,
-        delegate: "GPU",
-      },
-      runningMode: "VIDEO",
-      numFaces: 1,
-      outputFacialTransformationMatrixes: true,
+  const vision = await FilesetResolver.forVisionTasks(wasmPath);
+  faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: modelPath,
+      delegate: "GPU",
     },
-  );
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFacialTransformationMatrixes: true,
+  });
 }
 
 function detect(frame: ImageBitmap, timestamp: number, id: number) {
@@ -51,12 +49,12 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
     return;
   }
 
-  const landmarks: Point3D[] = result.faceLandmarks[0];
+  const landmarks: Point3D[] = result.faceLandmarks[0]!;
   const gazeRatio = computeGazeRatio(landmarks);
 
   let headPose = { yaw: 0, pitch: 0, roll: 0 };
   if (result.facialTransformationMatrixes?.length > 0) {
-    const matrix = result.facialTransformationMatrixes[0].data;
+    const matrix = result.facialTransformationMatrixes[0]!.data;
     headPose = matrixToEuler(Array.from(matrix));
   }
 

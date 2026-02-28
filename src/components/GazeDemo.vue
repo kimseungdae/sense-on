@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue';
 import { createCameraStream, createTrackerClient, createPointFilter } from '../core';
-import type { TrackingResult } from '../core';
+import type { TrackingResult, Point3D } from '../core';
+import {
+  TESSELATION, LEFT_EYE, RIGHT_EYE,
+  LEFT_IRIS, RIGHT_IRIS, LIPS, FACE_OVAL,
+} from '../core/face-connections';
 
 const videoContainer = ref<HTMLDivElement>();
+const canvas = ref<HTMLCanvasElement>();
 const status = shallowRef<'idle' | 'loading' | 'running' | 'error'>('idle');
 const errorMsg = ref('');
 const fps = ref(0);
@@ -21,7 +26,7 @@ let unsubResult: (() => void) | null = null;
 let unsubError: (() => void) | null = null;
 
 const gazeFilter = createPointFilter({ minCutoff: 1.5, beta: 0.5 });
-const GAZE_GAIN = 2.5; // amplify - iris movement range is very small
+const GAZE_GAIN = 2.5;
 
 // FPS counter
 let frameCount = 0;
@@ -37,6 +42,71 @@ function updateFps() {
   lastFpsTime = now;
 }
 
+// --- Wireframe rendering ---
+function drawWireframe(ctx: CanvasRenderingContext2D, landmarks: Point3D[], w: number, h: number) {
+  ctx.clearRect(0, 0, w, h);
+
+  // Mirror x for selfie view
+  const lx = (p: Point3D) => (1 - p.x) * w;
+  const ly = (p: Point3D) => p.y * h;
+
+  // Depth-based alpha: z is negative=closer, positive=farther
+  const zValues = landmarks.map(p => p.z);
+  const zMin = Math.min(...zValues);
+  const zMax = Math.max(...zValues);
+  const zRange = zMax - zMin || 1;
+  const depthAlpha = (p: Point3D) => {
+    const t = 1 - (p.z - zMin) / zRange; // closer = brighter
+    return 0.15 + t * 0.45; // 0.15 ~ 0.6
+  };
+
+  function drawConnections(
+    conns: [number, number][],
+    color: string,
+    lineWidth: number,
+    baseAlpha: number,
+  ) {
+    ctx.lineWidth = lineWidth;
+    for (const [i, j] of conns) {
+      const a = landmarks[i], b = landmarks[j];
+      if (!a || !b) continue;
+      const alpha = baseAlpha * (depthAlpha(a) + depthAlpha(b)) / 2;
+      ctx.strokeStyle = color.replace('A', String(alpha));
+      ctx.beginPath();
+      ctx.moveTo(lx(a), ly(a));
+      ctx.lineTo(lx(b), ly(b));
+      ctx.stroke();
+    }
+  }
+
+  // Tessellation mesh — subtle, thin
+  drawConnections(TESSELATION, 'rgba(0,220,255,A)', 0.5, 0.6);
+
+  // Face oval
+  drawConnections(FACE_OVAL, 'rgba(100,255,200,A)', 1.2, 1.0);
+
+  // Eyes
+  drawConnections(LEFT_EYE, 'rgba(0,255,150,A)', 1.5, 1.0);
+  drawConnections(RIGHT_EYE, 'rgba(0,255,150,A)', 1.5, 1.0);
+
+  // Iris — bright
+  drawConnections(LEFT_IRIS, 'rgba(255,100,100,A)', 2, 1.0);
+  drawConnections(RIGHT_IRIS, 'rgba(255,100,100,A)', 2, 1.0);
+
+  // Iris center dots
+  for (const idx of [468, 473]) {
+    const p = landmarks[idx];
+    if (!p) continue;
+    ctx.fillStyle = `rgba(255,80,80,${depthAlpha(p)})`;
+    ctx.beginPath();
+    ctx.arc(lx(p), ly(p), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Lips
+  drawConnections(LIPS, 'rgba(255,150,200,A)', 1.2, 0.9);
+}
+
 function handleResult(data: TrackingResult) {
   frameCount++;
   inferenceMs.value = Math.round(data.inferenceMs);
@@ -49,6 +119,16 @@ function handleResult(data: TrackingResult) {
   headYaw.value = Math.round(data.headPose.yaw);
   headPitch.value = Math.round(data.headPose.pitch);
   headRoll.value = Math.round(data.headPose.roll);
+
+  // Draw face wireframe
+  if (data.landmarks && canvas.value) {
+    const ctx = canvas.value.getContext('2d');
+    if (ctx) {
+      const w = canvas.value.width;
+      const h = canvas.value.height;
+      drawWireframe(ctx, data.landmarks, w, h);
+    }
+  }
 }
 
 async function start() {
@@ -68,6 +148,12 @@ async function start() {
       video.style.objectFit = 'cover';
       video.style.transform = 'scaleX(-1)';
       videoContainer.value.prepend(video);
+    }
+
+    // Size canvas to match video
+    if (canvas.value) {
+      canvas.value.width = 640;
+      canvas.value.height = 480;
     }
 
     await tracker.init();
@@ -105,6 +191,11 @@ function stop() {
     if (video) video.remove();
   }
 
+  if (canvas.value) {
+    const ctx = canvas.value.getContext('2d');
+    ctx?.clearRect(0, 0, canvas.value.width, canvas.value.height);
+  }
+
   gazeFilter.reset();
   fps.value = 0;
   inferenceMs.value = 0;
@@ -119,7 +210,6 @@ onUnmounted(() => {
   stop();
 });
 
-// Gaze dot position: map -1~+1 to 0%~100%
 function gazeStyle() {
   const x = ((gazeX.value + 1) / 2) * 100;
   const y = ((gazeY.value + 1) / 2) * 100;
@@ -133,6 +223,9 @@ function gazeStyle() {
 <template>
   <div class="gaze-demo">
     <div ref="videoContainer" class="video-container">
+      <!-- Wireframe canvas overlay -->
+      <canvas ref="canvas" class="wireframe-canvas" />
+
       <!-- Gaze dot overlay -->
       <div
         v-if="status === 'running'"
@@ -197,6 +290,15 @@ function gazeStyle() {
   background: #111;
   border-radius: 8px;
   overflow: hidden;
+}
+
+.wireframe-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .gaze-dot {

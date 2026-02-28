@@ -7,6 +7,7 @@ type EulerAngles = { yaw: number; pitch: number; roll: number };
 interface TrackingResult {
   gazeRatio: Point2D;
   headPose: EulerAngles;
+  landmarks?: Point3D[];
   inferenceMs: number;
   timestamp: number;
 }
@@ -142,7 +143,7 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
   reply({
     type: "result",
     id,
-    data: { gazeRatio, headPose, inferenceMs, timestamp },
+    data: { gazeRatio, headPose, landmarks, inferenceMs, timestamp },
   });
 }
 

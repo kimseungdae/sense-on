@@ -12,8 +12,8 @@ export function createCameraStream(options: CameraOptions = {}): CameraStream {
   const width = options.width ?? 640;
   const height = options.height ?? 480;
   const facingMode = options.facingMode ?? "user";
-  const inferenceWidth = options.inferenceWidth ?? 320;
-  const inferenceHeight = options.inferenceHeight ?? 240;
+  const inferenceWidth = options.inferenceWidth ?? 640;
+  const inferenceHeight = options.inferenceHeight ?? 480;
 
   const video = document.createElement("video");
   video.setAttribute("playsinline", "");

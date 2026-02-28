@@ -87,15 +87,22 @@ async function init(wasmPath: string, modelPath: string) {
   const mp = g.module.exports;
 
   const vision = await mp.FilesetResolver.forVisionTasks(wasmPath);
-  faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, {
+  const opts = {
     baseOptions: {
       modelAssetPath: modelPath,
-      delegate: "GPU",
+      delegate: "GPU" as const,
     },
-    runningMode: "VIDEO",
+    runningMode: "VIDEO" as const,
     numFaces: 1,
     outputFacialTransformationMatrixes: true,
-  });
+  };
+  try {
+    faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, opts);
+  } catch {
+    // GPU delegate unavailable — fallback to CPU
+    opts.baseOptions.delegate = "CPU" as any;
+    faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, opts);
+  }
 }
 
 function detect(frame: ImageBitmap, timestamp: number, id: number) {

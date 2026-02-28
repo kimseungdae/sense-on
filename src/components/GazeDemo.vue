@@ -20,7 +20,8 @@ let unsubFrame: (() => void) | null = null;
 let unsubResult: (() => void) | null = null;
 let unsubError: (() => void) | null = null;
 
-const gazeFilter = createPointFilter({ minCutoff: 1.0, beta: 0.007 });
+const gazeFilter = createPointFilter({ minCutoff: 1.5, beta: 0.5 });
+const GAZE_GAIN = 2.5; // amplify - iris movement range is very small
 
 // FPS counter
 let frameCount = 0;
@@ -41,8 +42,9 @@ function handleResult(data: TrackingResult) {
   inferenceMs.value = Math.round(data.inferenceMs);
 
   const filtered = gazeFilter.filter(data.gazeRatio, data.timestamp);
-  gazeX.value = filtered.x;
-  gazeY.value = filtered.y;
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+  gazeX.value = clamp(filtered.x * GAZE_GAIN);
+  gazeY.value = clamp(filtered.y * GAZE_GAIN);
 
   headYaw.value = Math.round(data.headPose.yaw);
   headPitch.value = Math.round(data.headPose.pitch);

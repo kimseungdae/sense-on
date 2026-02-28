@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useTracker } from '../composables/useTracker';
 import { useCalibration } from '../composables/useCalibration';
-import { applyTransform } from '../core/calibration';
+import { applyGazeTransform } from '../core/calibration';
 
 const COLS = 32;
 const ROWS = 32;
@@ -43,7 +43,7 @@ onMounted(() => {
 
   unsub = onResult((data) => {
     if (!transform.value) return;
-    const pos = applyTransform(transform.value, data.gazeRatio);
+    const pos = applyGazeTransform(transform.value, data.gazeRatio, data.headPose.yaw, data.headPose.pitch);
 
     const col = clamp(Math.floor(pos.x / cellW.value), 0, COLS - 1);
     const row = clamp(Math.floor(pos.y / cellH.value), 0, ROWS - 1);

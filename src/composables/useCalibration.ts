@@ -1,10 +1,10 @@
 import { ref, readonly } from "vue";
-import type { AffineTransform } from "../core/calibration";
+import type { GazeTransform } from "../core/calibration";
 
-const transform = ref<AffineTransform | null>(null);
+const transform = ref<GazeTransform | null>(null);
 
 export function useCalibration() {
-  function setTransform(t: AffineTransform) {
+  function setTransform(t: GazeTransform) {
     transform.value = t;
   }
 

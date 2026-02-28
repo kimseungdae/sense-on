@@ -1,116 +1,123 @@
 import type { Point2D } from "./types";
 
-export interface AffineTransform {
-  a: number;
-  b: number;
-  c: number; // sx = a*gx + b*gy + c
-  d: number;
-  e: number;
-  f: number; // sy = d*gx + e*gy + f
+// 4-input model: sx = a*gx + b*gy + c*yaw + d*pitch + e
+export interface GazeTransform {
+  readonly xCoeffs: readonly number[]; // [a, b, c, d, e] for screen X
+  readonly yCoeffs: readonly number[]; // [a, b, c, d, e] for screen Y
 }
 
 export interface CalibrationSample {
-  gaze: Point2D; // gazeRatio from tracker
-  screen: Point2D; // known screen coordinate
+  gaze: Point2D;
+  yaw: number;
+  pitch: number;
+  screen: Point2D;
 }
 
-type Row3 = [number, number, number];
-type Mat3 = [Row3, Row3, Row3];
+const NUM_FEATURES = 4; // gx, gy, yaw, pitch
+const NUM_PARAMS = NUM_FEATURES + 1; // + bias
 
-// Solve 3x3 system via Cramer's rule
-function solve3x3(A: Mat3, b: Row3): Row3 | null {
-  const [a0, a1, a2] = A;
-  const det =
-    a0[0] * (a1[1] * a2[2] - a1[2] * a2[1]) -
-    a0[1] * (a1[0] * a2[2] - a1[2] * a2[0]) +
-    a0[2] * (a1[0] * a2[1] - a1[1] * a2[0]);
+// NxN Gaussian elimination with partial pivoting
+function solveLinearSystem(A: number[][], b: number[]): number[] | null {
+  const n = A.length;
+  const aug = A.map((row, i) => [...row, b[i]!]);
 
-  if (Math.abs(det) < 1e-12) return null;
+  for (let col = 0; col < n; col++) {
+    // Partial pivoting
+    let maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(aug[row]![col]!) > Math.abs(aug[maxRow]![col]!)) {
+        maxRow = row;
+      }
+    }
+    [aug[col], aug[maxRow]] = [aug[maxRow]!, aug[col]!];
 
-  const x =
-    (b[0] * (a1[1] * a2[2] - a1[2] * a2[1]) -
-      a0[1] * (b[1] * a2[2] - a1[2] * b[2]) +
-      a0[2] * (b[1] * a2[1] - a1[1] * b[2])) /
-    det;
+    if (Math.abs(aug[col]![col]!) < 1e-12) return null;
 
-  const y =
-    (a0[0] * (b[1] * a2[2] - a1[2] * b[2]) -
-      b[0] * (a1[0] * a2[2] - a1[2] * a2[0]) +
-      a0[2] * (a1[0] * b[2] - b[1] * a2[0])) /
-    det;
-
-  const z =
-    (a0[0] * (a1[1] * b[2] - b[1] * a2[1]) -
-      a0[1] * (a1[0] * b[2] - b[1] * a2[0]) +
-      b[0] * (a1[0] * a2[1] - a1[1] * a2[0])) /
-    det;
-
-  return [x, y, z];
-}
-
-// Least-squares affine transform from calibration samples
-// Normal equation: (AᵀA)p = Aᵀb for each of sx, sy independently
-export function computeAffineTransform(
-  samples: CalibrationSample[],
-): AffineTransform | null {
-  const n = samples.length;
-  if (n < 3) return null;
-
-  // Build AᵀA and Aᵀb for both x and y
-  let sumGx2 = 0,
-    sumGy2 = 0,
-    sumGxGy = 0;
-  let sumGx = 0,
-    sumGy = 0;
-  let sumSxGx = 0,
-    sumSxGy = 0,
-    sumSx = 0;
-  let sumSyGx = 0,
-    sumSyGy = 0,
-    sumSy = 0;
-
-  for (const s of samples) {
-    const gx = s.gaze.x,
-      gy = s.gaze.y;
-    const sx = s.screen.x,
-      sy = s.screen.y;
-    sumGx2 += gx * gx;
-    sumGy2 += gy * gy;
-    sumGxGy += gx * gy;
-    sumGx += gx;
-    sumGy += gy;
-    sumSxGx += sx * gx;
-    sumSxGy += sx * gy;
-    sumSx += sx;
-    sumSyGx += sy * gx;
-    sumSyGy += sy * gy;
-    sumSy += sy;
+    // Forward elimination
+    for (let row = col + 1; row < n; row++) {
+      const factor = aug[row]![col]! / aug[col]![col]!;
+      for (let j = col; j <= n; j++) {
+        aug[row]![j] = aug[row]![j]! - factor * aug[col]![j]!;
+      }
+    }
   }
 
-  const M: Mat3 = [
-    [sumGx2, sumGxGy, sumGx],
-    [sumGxGy, sumGy2, sumGy],
-    [sumGx, sumGy, n],
-  ];
+  // Back substitution
+  const x = new Array<number>(n);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = aug[i]![n]!;
+    for (let j = i + 1; j < n; j++) {
+      x[i]! -= aug[i]![j]! * x[j]!;
+    }
+    x[i]! /= aug[i]![i]!;
+  }
 
-  const abc = solve3x3(M, [sumSxGx, sumSxGy, sumSx]);
-  const def_ = solve3x3(M, [sumSyGx, sumSyGy, sumSy]);
-
-  if (!abc || !def_) return null;
-
-  return {
-    a: abc[0],
-    b: abc[1],
-    c: abc[2],
-    d: def_[0],
-    e: def_[1],
-    f: def_[2],
-  };
+  return x;
 }
 
-export function applyTransform(t: AffineTransform, gaze: Point2D): Point2D {
-  return {
-    x: t.a * gaze.x + t.b * gaze.y + t.c,
-    y: t.d * gaze.x + t.e * gaze.y + t.f,
-  };
+function featureRow(s: CalibrationSample): number[] {
+  return [s.gaze.x, s.gaze.y, s.yaw, s.pitch, 1];
+}
+
+// Least-squares: (AᵀA)p = Aᵀb via Gaussian elimination
+export function computeGazeTransform(
+  samples: CalibrationSample[],
+): GazeTransform | null {
+  const n = samples.length;
+  if (n < NUM_PARAMS) return null;
+
+  // Build AᵀA (5x5) and Aᵀbx, Aᵀby (5x1)
+  const AtA: number[][] = Array.from({ length: NUM_PARAMS }, () =>
+    new Array(NUM_PARAMS).fill(0),
+  );
+  const Atbx = new Array<number>(NUM_PARAMS).fill(0);
+  const Atby = new Array<number>(NUM_PARAMS).fill(0);
+
+  for (const s of samples) {
+    const f = featureRow(s);
+    for (let i = 0; i < NUM_PARAMS; i++) {
+      for (let j = 0; j < NUM_PARAMS; j++) {
+        AtA[i]![j]! += f[i]! * f[j]!;
+      }
+      Atbx[i]! += f[i]! * s.screen.x;
+      Atby[i]! += f[i]! * s.screen.y;
+    }
+  }
+
+  const xCoeffs = solveLinearSystem(AtA, Atbx);
+  // Rebuild AtA (it was modified in-place by Gaussian elimination)
+  for (let i = 0; i < NUM_PARAMS; i++) {
+    for (let j = 0; j < NUM_PARAMS; j++) {
+      AtA[i]![j] = 0;
+    }
+  }
+  for (const s of samples) {
+    const f = featureRow(s);
+    for (let i = 0; i < NUM_PARAMS; i++) {
+      for (let j = 0; j < NUM_PARAMS; j++) {
+        AtA[i]![j]! += f[i]! * f[j]!;
+      }
+    }
+  }
+  const yCoeffs = solveLinearSystem(AtA, Atby);
+
+  if (!xCoeffs || !yCoeffs) return null;
+
+  return { xCoeffs, yCoeffs };
+}
+
+export function applyGazeTransform(
+  t: GazeTransform,
+  gaze: Point2D,
+  yaw: number,
+  pitch: number,
+): Point2D {
+  const f = [gaze.x, gaze.y, yaw, pitch, 1];
+  let sx = 0,
+    sy = 0;
+  for (let i = 0; i < NUM_PARAMS; i++) {
+    sx += t.xCoeffs[i]! * f[i]!;
+    sy += t.yCoeffs[i]! * f[i]!;
+  }
+  return { x: sx, y: sy };
 }

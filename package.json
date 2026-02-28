@@ -1,0 +1,57 @@
+{
+  "name": "sense-on",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "On-device motion and gaze tracking core library for the web. MediaPipe-powered, 100% client-side, privacy-first.",
+  "main": "./dist-lib/index.js",
+  "module": "./dist-lib/index.js",
+  "types": "./dist-lib/types/lib.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist-lib/index.js",
+      "types": "./dist-lib/types/lib.d.ts"
+    },
+    "./core": {
+      "import": "./dist-lib/core.js",
+      "types": "./dist-lib/types/core/index.d.ts"
+    }
+  },
+  "files": [
+    "dist-lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "build:lib": "vite build --config vite.config.lib.ts && vue-tsc --project tsconfig.lib.json --declaration --emitDeclarationOnly --declarationDir dist-lib/types",
+    "test": "vitest run",
+    "setup": "tsx scripts/setup-mediapipe.ts",
+    "preview": "vite preview",
+    "prepublishOnly": "npm run build:lib"
+  },
+  "peerDependencies": {
+    "@mediapipe/tasks-vision": "^0.10.0",
+    "vue": "^3.3.0"
+  },
+  "peerDependenciesMeta": {
+    "vue": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "vue": "^3.5.25"
+  },
+  "devDependencies": {
+    "@mediapipe/tasks-vision": "^0.10.32",
+    "@types/node": "^24.10.1",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "@vue/tsconfig": "^0.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18",
+    "vue-tsc": "^3.1.5"
+  }
+}

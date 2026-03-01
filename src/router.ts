@@ -9,7 +9,6 @@ const router = createRouter({
       path: "/attention",
       component: () => import("./views/AttentionView.vue"),
     },
-    { path: "/demo", component: () => import("./views/DemoView.vue") },
   ],
 });
 

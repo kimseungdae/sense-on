@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTracker } from '../composables/useTracker';
 import { useAttention } from '../composables/useAttention';
+import type { TrackingResult, Point3D } from '../core/types';
+import {
+  TESSELATION, LEFT_EYE, RIGHT_EYE,
+  LEFT_IRIS, RIGHT_IRIS, LIPS, FACE_OVAL,
+} from '../core/face-connections';
 
 const router = useRouter();
-const { onResult, status } = useTracker();
+const { onResult, status, getVideoElement } = useTracker();
 const {
   state,
   raw,
@@ -18,6 +23,8 @@ const {
   reset,
 } = useAttention();
 
+const videoContainer = ref<HTMLDivElement>();
+const canvas = ref<HTMLCanvasElement>();
 let unsub: (() => void) | null = null;
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 const elapsed = ref(0);
@@ -49,17 +56,99 @@ function formatTime(ms: number): string {
   return `${s}초`;
 }
 
+// --- Wireframe rendering ---
+function drawWireframe(ctx: CanvasRenderingContext2D, landmarks: Point3D[], w: number, h: number) {
+  ctx.clearRect(0, 0, w, h);
+
+  const lx = (p: Point3D) => (1 - p.x) * w;
+  const ly = (p: Point3D) => p.y * h;
+
+  const zValues = landmarks.map(p => p.z);
+  const zMin = Math.min(...zValues);
+  const zMax = Math.max(...zValues);
+  const zRange = zMax - zMin || 1;
+  const depthAlpha = (p: Point3D) => {
+    const t = 1 - (p.z - zMin) / zRange;
+    return 0.15 + t * 0.45;
+  };
+
+  function drawConnections(
+    conns: [number, number][],
+    color: string,
+    lineWidth: number,
+    baseAlpha: number,
+  ) {
+    ctx.lineWidth = lineWidth;
+    for (const [i, j] of conns) {
+      const a = landmarks[i], b = landmarks[j];
+      if (!a || !b) continue;
+      const alpha = baseAlpha * (depthAlpha(a) + depthAlpha(b)) / 2;
+      ctx.strokeStyle = color.replace('A', String(alpha));
+      ctx.beginPath();
+      ctx.moveTo(lx(a), ly(a));
+      ctx.lineTo(lx(b), ly(b));
+      ctx.stroke();
+    }
+  }
+
+  drawConnections(TESSELATION, 'rgba(0,220,255,A)', 0.5, 0.6);
+  drawConnections(FACE_OVAL, 'rgba(100,255,200,A)', 1.2, 1.0);
+  drawConnections(LEFT_EYE, 'rgba(0,255,150,A)', 1.5, 1.0);
+  drawConnections(RIGHT_EYE, 'rgba(0,255,150,A)', 1.5, 1.0);
+  drawConnections(LEFT_IRIS, 'rgba(255,100,100,A)', 2, 1.0);
+  drawConnections(RIGHT_IRIS, 'rgba(255,100,100,A)', 2, 1.0);
+
+  for (const idx of [468, 473]) {
+    const p = landmarks[idx];
+    if (!p) continue;
+    ctx.fillStyle = `rgba(255,80,80,${depthAlpha(p)})`;
+    ctx.beginPath();
+    ctx.arc(lx(p), ly(p), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawConnections(LIPS, 'rgba(255,150,200,A)', 1.2, 0.9);
+}
+
+function handleResult(data: TrackingResult) {
+  processResult(data);
+
+  if (data.landmarks && canvas.value) {
+    const ctx = canvas.value.getContext('2d');
+    if (ctx) {
+      drawWireframe(ctx, data.landmarks, canvas.value.width, canvas.value.height);
+    }
+  }
+}
+
 function finish() {
   router.push('/');
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (status.value !== 'running') {
     router.push('/');
     return;
   }
+
   reset();
-  unsub = onResult(processResult);
+
+  await nextTick();
+  const video = getVideoElement();
+  if (video && videoContainer.value) {
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'cover';
+    video.style.transform = 'scaleX(-1)';
+    videoContainer.value.prepend(video);
+  }
+
+  if (canvas.value) {
+    canvas.value.width = 640;
+    canvas.value.height = 480;
+  }
+
+  unsub = onResult(handleResult);
   tickTimer = setInterval(() => {
     elapsed.value = performance.now();
   }, 200);
@@ -68,6 +157,11 @@ onMounted(() => {
 onUnmounted(() => {
   unsub?.();
   if (tickTimer) clearInterval(tickTimer);
+
+  if (videoContainer.value) {
+    const video = videoContainer.value.querySelector('video');
+    if (video) video.remove();
+  }
 });
 </script>
 
@@ -75,41 +169,45 @@ onUnmounted(() => {
   <div class="attention" :style="{ '--state-color': stateColor }">
     <div class="header">
       <h1>sense-on</h1>
-      <p class="subtitle">Attention Monitor</p>
     </div>
 
-    <div class="state-indicator">
-      <div class="state-dot" />
-      <span class="state-label">{{ stateLabel }}</span>
-      <span class="streak" v-if="state === 'attentive'">
-        {{ formatTime(currentStreakMs) }}
-      </span>
-    </div>
-
-    <div class="metrics">
-      <div class="metric-card">
-        <div class="metric-label">집중률</div>
-        <div class="metric-value">{{ Math.round(attentionRate * 100) }}%</div>
-        <div class="bar-track">
-          <div
-            class="bar-fill"
-            :style="{ width: attentionRate * 100 + '%', background: attentionRate >= 0.7 ? '#66bb6a' : '#ef5350' }"
-          />
+    <div class="main-area">
+      <div ref="videoContainer" class="video-container">
+        <canvas ref="canvas" class="wireframe-canvas" />
+        <div class="state-badge">
+          <div class="state-dot" />
+          <span>{{ stateLabel }}</span>
+          <span class="streak" v-if="state === 'attentive' && currentStreakMs > 1000">
+            {{ formatTime(currentStreakMs) }}
+          </span>
         </div>
       </div>
 
-      <div class="metric-row">
-        <div class="metric-card small">
-          <div class="metric-label">이탈 횟수</div>
-          <div class="metric-value">{{ distractionCount }}회</div>
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="metric-label">집중률</div>
+          <div class="metric-value">{{ Math.round(attentionRate * 100) }}%</div>
+          <div class="bar-track">
+            <div
+              class="bar-fill"
+              :style="{ width: attentionRate * 100 + '%', background: attentionRate >= 0.7 ? '#66bb6a' : '#ef5350' }"
+            />
+          </div>
         </div>
-        <div class="metric-card small">
-          <div class="metric-label">집중 시간</div>
-          <div class="metric-value">{{ formatTime(attentiveMs) }}</div>
-        </div>
-        <div class="metric-card small">
-          <div class="metric-label">전체 시간</div>
-          <div class="metric-value">{{ formatTime(totalMs) }}</div>
+
+        <div class="metric-row">
+          <div class="metric-card small">
+            <div class="metric-label">이탈 횟수</div>
+            <div class="metric-value">{{ distractionCount }}회</div>
+          </div>
+          <div class="metric-card small">
+            <div class="metric-label">집중 시간</div>
+            <div class="metric-value">{{ formatTime(attentiveMs) }}</div>
+          </div>
+          <div class="metric-card small">
+            <div class="metric-label">전체 시간</div>
+            <div class="metric-value">{{ formatTime(totalMs) }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -129,18 +227,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   min-height: 100vh;
   background: #0d1117;
   color: #e6edf3;
   padding: 20px;
-  gap: 32px;
+  gap: 20px;
 }
 
 .header { text-align: center; }
 
 .header h1 {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   margin: 0;
   background: linear-gradient(135deg, #4fc3f7, #66bb6a);
@@ -148,50 +245,78 @@ onUnmounted(() => {
   -webkit-text-fill-color: transparent;
 }
 
-.subtitle { color: #888; margin: 4px 0 0; font-size: 14px; }
-
-.state-indicator {
+.main-area {
+  width: 100%;
+  max-width: 480px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 16px;
 }
 
+.video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #111;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.wireframe-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.state-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  padding: 6px 14px;
+  border-radius: 20px;
+  z-index: 10;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--state-color);
+}
+
 .state-dot {
-  width: 28px;
-  height: 28px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--state-color);
-  box-shadow: 0 0 20px var(--state-color);
+  box-shadow: 0 0 10px var(--state-color);
   transition: background 0.3s, box-shadow 0.3s;
 }
 
-.state-label {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--state-color);
-  transition: color 0.3s;
-}
-
 .streak {
-  font-size: 18px;
+  font-size: 12px;
   color: #888;
+  font-weight: 400;
 }
 
 .metrics {
-  width: 320px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .metric-card {
   background: #161b22;
   border: 1px solid #21262d;
   border-radius: 10px;
-  padding: 16px;
+  padding: 14px;
 }
 
-.metric-card.small { padding: 12px; }
+.metric-card.small { padding: 10px; }
 
 .metric-row {
   display: grid;

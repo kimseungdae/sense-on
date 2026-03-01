@@ -33,9 +33,6 @@ async function startAttention() {
         {{ loading ? '카메라 로딩...' : '시작' }}
       </button>
 
-      <router-link to="/demo" class="btn secondary">
-        Demo Mode
-      </router-link>
     </div>
 
     <p class="note">

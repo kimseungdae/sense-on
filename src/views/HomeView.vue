@@ -7,12 +7,12 @@ const router = useRouter();
 const { start, status } = useTracker();
 const loading = ref(false);
 
-async function startCalibration() {
+async function startAttention() {
   loading.value = true;
   await start();
   loading.value = false;
   if (status.value === 'running') {
-    router.push('/calibrate');
+    router.push('/attention');
   }
 }
 </script>
@@ -21,16 +21,16 @@ async function startCalibration() {
   <div class="home">
     <div class="hero">
       <h1>sense-on</h1>
-      <p class="subtitle">On-device gaze tracking</p>
+      <p class="subtitle">Attention monitoring for kids</p>
     </div>
 
     <div class="actions">
       <button
         class="btn primary"
         :disabled="loading"
-        @click="startCalibration"
+        @click="startAttention"
       >
-        {{ loading ? 'Loading camera...' : 'Start Calibration' }}
+        {{ loading ? '카메라 로딩...' : '시작' }}
       </button>
 
       <router-link to="/demo" class="btn secondary">
@@ -39,8 +39,8 @@ async function startCalibration() {
     </div>
 
     <p class="note">
-      Calibration maps your eye gaze to screen coordinates.<br>
-      Camera permission is required.
+      화면을 보고 있는지 실시간으로 감지합니다.<br>
+      카메라 권한이 필요합니다.
     </p>
   </div>
 </template>

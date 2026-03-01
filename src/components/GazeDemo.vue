@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue';
-import { createCameraStream, createTrackerClient, createPointFilter } from '../core';
+import { createCameraStream, createTrackerClient } from '../core';
 import type { TrackingResult, Point3D } from '../core';
 import {
   TESSELATION, LEFT_EYE, RIGHT_EYE,
@@ -13,8 +13,6 @@ const status = shallowRef<'idle' | 'loading' | 'running' | 'error'>('idle');
 const errorMsg = ref('');
 const fps = ref(0);
 const inferenceMs = ref(0);
-const gazeX = ref(0);
-const gazeY = ref(0);
 const headYaw = ref(0);
 const headPitch = ref(0);
 const headRoll = ref(0);
@@ -24,9 +22,6 @@ let tracker: ReturnType<typeof createTrackerClient> | null = null;
 let unsubFrame: (() => void) | null = null;
 let unsubResult: (() => void) | null = null;
 let unsubError: (() => void) | null = null;
-
-const gazeFilter = createPointFilter({ minCutoff: 1.5, beta: 0.5 });
-const GAZE_GAIN = 2.5;
 
 // FPS counter
 let frameCount = 0;
@@ -111,12 +106,6 @@ function handleResult(data: TrackingResult) {
   frameCount++;
   inferenceMs.value = Math.round(data.inferenceMs);
 
-  const gaze = data.gazeRatio ?? { x: 0, y: 0 };
-  const filtered = gazeFilter.filter(gaze, data.timestamp);
-  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
-  gazeX.value = clamp(filtered.x * GAZE_GAIN);
-  gazeY.value = clamp(filtered.y * GAZE_GAIN);
-
   const hp = data.headPose ?? { yaw: 0, pitch: 0, roll: 0 };
   headYaw.value = Math.round(hp.yaw);
   headPitch.value = Math.round(hp.pitch);
@@ -198,7 +187,6 @@ function stop() {
     ctx?.clearRect(0, 0, canvas.value.width, canvas.value.height);
   }
 
-  gazeFilter.reset();
   fps.value = 0;
   inferenceMs.value = 0;
   status.value = 'idle';
@@ -212,14 +200,6 @@ onUnmounted(() => {
   stop();
 });
 
-function gazeStyle() {
-  const x = ((gazeX.value + 1) / 2) * 100;
-  const y = ((gazeY.value + 1) / 2) * 100;
-  return {
-    left: `${x}%`,
-    top: `${y}%`,
-  };
-}
 </script>
 
 <template>
@@ -227,13 +207,6 @@ function gazeStyle() {
     <div ref="videoContainer" class="video-container">
       <!-- Wireframe canvas overlay -->
       <canvas ref="canvas" class="wireframe-canvas" />
-
-      <!-- Gaze dot overlay -->
-      <div
-        v-if="status === 'running'"
-        class="gaze-dot"
-        :style="gazeStyle()"
-      />
 
       <!-- Loading overlay -->
       <div v-if="status === 'loading'" class="overlay">
@@ -256,10 +229,6 @@ function gazeStyle() {
       <div class="debug-row">
         <span class="label">Inference</span>
         <span class="value">{{ inferenceMs }}ms</span>
-      </div>
-      <div class="debug-row">
-        <span class="label">Gaze</span>
-        <span class="value">x:{{ gazeX.toFixed(2) }} y:{{ gazeY.toFixed(2) }}</span>
       </div>
       <div class="debug-row">
         <span class="label">Head</span>
@@ -301,19 +270,6 @@ function gazeStyle() {
   height: 100%;
   pointer-events: none;
   z-index: 5;
-}
-
-.gaze-dot {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  background: rgba(255, 50, 50, 0.8);
-  border: 2px solid white;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  transition: left 0.05s linear, top 0.05s linear;
-  z-index: 10;
 }
 
 .overlay {

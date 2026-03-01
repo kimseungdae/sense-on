@@ -5,12 +5,11 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/", component: HomeView },
-    { path: "/demo", component: () => import("./views/DemoView.vue") },
     {
-      path: "/calibrate",
-      component: () => import("./views/CalibrationView.vue"),
+      path: "/attention",
+      component: () => import("./views/AttentionView.vue"),
     },
-    { path: "/reader", component: () => import("./views/ReaderView.vue") },
+    { path: "/demo", component: () => import("./views/DemoView.vue") },
   ],
 });
 

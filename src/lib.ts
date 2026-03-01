@@ -1,5 +1,4 @@
 export {
-  computeGazeRatio,
   matrixToEuler,
   createOneEuroFilter,
   createPointFilter,

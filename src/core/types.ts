@@ -15,23 +15,8 @@ export interface EulerAngles {
   roll: number;
 }
 
-export interface EyePatches {
-  left: number[]; // 60 floats (10x6 grayscale, 0~1)
-  right: number[]; // 60 floats
-}
-
-export interface GazeFeatures {
-  leftGaze: Point2D;
-  rightGaze: Point2D;
-  headYaw: number;
-  headPitch: number;
-}
-
 export interface TrackingResult {
-  gazeFeatures: GazeFeatures;
-  eyePatches?: EyePatches;
   faceCenter?: Point2D;
-  gazeRatio?: Point2D;
   headPose?: EulerAngles;
   landmarks?: Point3D[];
   inferenceMs: number;

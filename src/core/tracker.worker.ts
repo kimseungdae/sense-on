@@ -140,11 +140,11 @@ let patchCtx: OffscreenCanvasRenderingContext2D | null = null;
 function ensureCanvases() {
   if (!cropCanvas) {
     cropCanvas = new OffscreenCanvas(1, 1);
-    cropCtx = cropCanvas.getContext("2d")!;
+    cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true })!;
   }
   if (!patchCanvas) {
     patchCanvas = new OffscreenCanvas(EYE_PATCH_W, EYE_PATCH_H);
-    patchCtx = patchCanvas.getContext("2d")!;
+    patchCtx = patchCanvas.getContext("2d", { willReadFrequently: true })!;
   }
 }
 

@@ -2,9 +2,11 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTracker } from '../composables/useTracker';
+import { useI18n } from '../composables/useI18n';
 
 const router = useRouter();
 const { start, status } = useTracker();
+const { t, locale, toggleLocale } = useI18n();
 const loading = ref(false);
 
 async function startAttention() {
@@ -19,9 +21,13 @@ async function startAttention() {
 
 <template>
   <div class="home">
+    <button class="lang-toggle" @click="toggleLocale">
+      {{ locale === 'en' ? '한국어' : 'EN' }}
+    </button>
+
     <div class="hero">
       <h1>sense-on</h1>
-      <p class="subtitle">Attention monitoring for kids</p>
+      <p class="subtitle">{{ t.subtitle }}</p>
     </div>
 
     <div class="actions">
@@ -30,20 +36,20 @@ async function startAttention() {
         :disabled="loading"
         @click="startAttention"
       >
-        {{ loading ? '카메라 로딩...' : '시작' }}
+        {{ loading ? t.cameraLoading : t.start }}
       </button>
-
     </div>
 
     <p class="note">
-      화면을 보고 있는지 실시간으로 감지합니다.<br>
-      카메라 권한이 필요합니다.
+      {{ t.description }}<br>
+      {{ t.cameraPermission }}
     </p>
   </div>
 </template>
 
 <style scoped>
 .home {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -53,6 +59,21 @@ async function startAttention() {
   color: #e6edf3;
   padding: 20px;
 }
+
+.lang-toggle {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 4px 12px;
+  background: transparent;
+  color: #888;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lang-toggle:hover { color: #e6edf3; border-color: #4a90d9; }
 
 .hero {
   text-align: center;
@@ -100,12 +121,6 @@ h1 {
 .btn.primary {
   background: #4a90d9;
   color: white;
-}
-
-.btn.secondary {
-  background: #1e2a3a;
-  color: #8ba4c0;
-  border: 1px solid #2d3f54;
 }
 
 .note {

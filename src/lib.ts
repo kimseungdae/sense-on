@@ -4,6 +4,15 @@ export {
   createPointFilter,
   createTrackerClient,
   createCameraStream,
+  computeAttention,
+  computeEAR,
+  TESSELATION,
+  LEFT_EYE,
+  RIGHT_EYE,
+  LEFT_IRIS,
+  RIGHT_IRIS,
+  LIPS,
+  FACE_OVAL,
 } from "./core";
 
 export type {
@@ -18,4 +27,6 @@ export type {
   PointFilter,
   TrackerClient,
   CameraStream,
+  AttentionState,
+  AttentionResult,
 } from "./core";

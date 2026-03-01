@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTracker } from '../composables/useTracker';
 import { useAttention } from '../composables/useAttention';
+import { useI18n } from '../composables/useI18n';
 import type { TrackingResult, Point3D } from '../core/types';
 import {
   TESSELATION, LEFT_EYE, RIGHT_EYE,
@@ -22,6 +23,7 @@ const {
   processResult,
   reset,
 } = useAttention();
+const { t, locale, toggleLocale } = useI18n();
 
 const videoContainer = ref<HTMLDivElement>();
 const canvas = ref<HTMLCanvasElement>();
@@ -30,12 +32,13 @@ let tickTimer: ReturnType<typeof setInterval> | null = null;
 const elapsed = ref(0);
 
 const stateLabel = computed(() => {
-  switch (state.value) {
-    case 'attentive': return '집중 중';
-    case 'looking_away': return '시선 이탈';
-    case 'drowsy': return '졸림';
-    case 'absent': return '자리 비움';
-  }
+  const labels = {
+    attentive: t.value.attentive,
+    looking_away: t.value.lookingAway,
+    drowsy: t.value.drowsy,
+    absent: t.value.absent,
+  };
+  return labels[state.value];
 });
 
 const stateColor = computed(() => {
@@ -51,9 +54,9 @@ function formatTime(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const h = Math.floor(m / 60);
-  if (h > 0) return `${h}시간 ${m % 60}분`;
-  if (m > 0) return `${m}분 ${s % 60}초`;
-  return `${s}초`;
+  if (h > 0) return `${h}${t.value.hours}${m % 60}${t.value.minutes.trim()}`;
+  if (m > 0) return `${m}${t.value.minutes}${s % 60}${t.value.seconds}`;
+  return `${s}${t.value.seconds}`;
 }
 
 // --- Wireframe rendering ---
@@ -169,6 +172,9 @@ onUnmounted(() => {
   <div class="attention" :style="{ '--state-color': stateColor }">
     <div class="header">
       <h1>sense-on</h1>
+      <button class="lang-toggle" @click="toggleLocale">
+        {{ locale === 'en' ? '한국어' : 'EN' }}
+      </button>
     </div>
 
     <div class="main-area">
@@ -185,7 +191,7 @@ onUnmounted(() => {
 
       <div class="metrics">
         <div class="metric-card">
-          <div class="metric-label">집중률</div>
+          <div class="metric-label">{{ t.attentionRate }}</div>
           <div class="metric-value">{{ Math.round(attentionRate * 100) }}%</div>
           <div class="bar-track">
             <div
@@ -197,15 +203,15 @@ onUnmounted(() => {
 
         <div class="metric-row">
           <div class="metric-card small">
-            <div class="metric-label">이탈 횟수</div>
-            <div class="metric-value">{{ distractionCount }}회</div>
+            <div class="metric-label">{{ t.distractionCount }}</div>
+            <div class="metric-value">{{ distractionCount }}{{ t.times }}</div>
           </div>
           <div class="metric-card small">
-            <div class="metric-label">집중 시간</div>
+            <div class="metric-label">{{ t.attentiveTime }}</div>
             <div class="metric-value">{{ formatTime(attentiveMs) }}</div>
           </div>
           <div class="metric-card small">
-            <div class="metric-label">전체 시간</div>
+            <div class="metric-label">{{ t.totalTime }}</div>
             <div class="metric-value">{{ formatTime(totalMs) }}</div>
           </div>
         </div>
@@ -218,7 +224,7 @@ onUnmounted(() => {
       <span>EAR: {{ raw.eyeOpenness.toFixed(2) }}</span>
     </div>
 
-    <button class="btn" @click="finish">종료</button>
+    <button class="btn" @click="finish">{{ t.finish }}</button>
   </div>
 </template>
 
@@ -234,7 +240,12 @@ onUnmounted(() => {
   gap: 20px;
 }
 
-.header { text-align: center; }
+.header {
+  text-align: center;
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+}
 
 .header h1 {
   font-size: 24px;
@@ -244,6 +255,21 @@ onUnmounted(() => {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+.lang-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 4px 12px;
+  background: transparent;
+  color: #888;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lang-toggle:hover { color: #e6edf3; border-color: #4a90d9; }
 
 .main-area {
   width: 100%;

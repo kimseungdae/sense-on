@@ -14,7 +14,7 @@ type EyePatches = { left: Float32Array; right: Float32Array };
 
 interface TrackingResult {
   gazeFeatures: GazeFeatures;
-  eyePatches?: EyePatches;
+  eyePatches?: { left: number[]; right: number[] };
   faceCenter?: Point2D;
   gazeRatio?: Point2D;
   headPose?: EulerAngles;
@@ -310,7 +310,12 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
   const gazeRatio = computeGazeRatio(landmarks);
 
   // Extract eye patches BEFORE closing the frame
-  const eyePatches = extractEyePatches(frame, landmarks);
+  let eyePatches: EyePatches | null = null;
+  try {
+    eyePatches = extractEyePatches(frame, landmarks);
+  } catch (e) {
+    console.warn("[eye-patch]", e instanceof Error ? e.message : e);
+  }
   frame.close();
 
   const nose = landmarks[1]!;
@@ -322,25 +327,29 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
     headPose = matrixToEuler(Array.from(matrix));
   }
 
-  const data: TrackingResult = {
-    gazeFeatures,
-    eyePatches: eyePatches ?? undefined,
-    faceCenter,
-    gazeRatio,
-    headPose,
-    landmarks,
-    inferenceMs,
-    timestamp,
-  };
-
+  // Convert Float32Array to plain arrays for reliable structured clone
+  let eyePatchData: { left: number[]; right: number[] } | undefined;
   if (eyePatches) {
-    (self as any).postMessage({ type: "result", id, data }, [
-      eyePatches.left.buffer,
-      eyePatches.right.buffer,
-    ]);
-  } else {
-    reply({ type: "result", id, data });
+    eyePatchData = {
+      left: Array.from(eyePatches.left),
+      right: Array.from(eyePatches.right),
+    };
   }
+
+  reply({
+    type: "result",
+    id,
+    data: {
+      gazeFeatures,
+      eyePatches: eyePatchData,
+      faceCenter,
+      gazeRatio,
+      headPose,
+      landmarks,
+      inferenceMs,
+      timestamp,
+    },
+  });
 }
 
 function reply(msg: WorkerOutMsg) {

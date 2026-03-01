@@ -16,8 +16,8 @@ export interface EulerAngles {
 }
 
 export interface EyePatches {
-  left: Float32Array; // 60 floats (10x6 grayscale, 0~1)
-  right: Float32Array; // 60 floats
+  left: number[]; // 60 floats (10x6 grayscale, 0~1)
+  right: number[]; // 60 floats
 }
 
 export interface GazeFeatures {

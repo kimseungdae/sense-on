@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/sense-on.svg)](https://www.npmjs.com/package/sense-on)
 [![license](https://img.shields.io/npm/l/sense-on.svg)](https://github.com/kimseungdae/sense-on/blob/master/LICENSE)
 
-[English](#features) | [한국어](#한국어)
+**[Live Demo](https://sense-on.vercel.app)** · [English](#features) · [한국어](#한국어)
 
 ---
 
@@ -162,6 +162,8 @@ Tested on Chrome 90+, Firefox 90+, Edge 90+, Safari 15.4+.
 
 > 브라우저 기반 얼굴 추적 및 주의력 모니터링 라이브러리.
 > MediaPipe 기반, 100% 클라이언트 사이드, 프라이버시 우선.
+
+**[라이브 데모](https://sense-on.vercel.app)**
 
 ## 주요 기능
 

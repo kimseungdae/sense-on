@@ -6,10 +6,11 @@ import { useCalibration } from '../composables/useCalibration';
 import {
   computeGazeTransform,
   applyGazeTransform,
+  buildFeatureVector,
   type CalibrationSample,
   type GazeTransform,
 } from '../core/calibration';
-import type { Point2D, GazeFeatures } from '../core/types';
+import type { Point2D } from '../core/types';
 
 const router = useRouter();
 const { onResult, status } = useTracker();
@@ -61,48 +62,36 @@ const totalCount = computed(() => {
 
 // --- Shared gaze collection ---
 const STABILIZE_MS = 500;
-const COLLECT_MS_P1 = 2000;
+const COLLECT_MS_P1 = 3000;
 const COLLECT_MS_P2 = 1500;
-let gazeBuffer: GazeFeatures[] = [];
+const SUBSAMPLE_RATE = 3;
+let frameBuffer: number[][] = [];
+let frameCounter = 0;
 let resultUnsub: (() => void) | null = null;
 
-function averageFeatures(): GazeFeatures | null {
-  if (gazeBuffer.length === 0) return null;
-  const avg: GazeFeatures = {
-    leftGaze: { x: 0, y: 0 },
-    rightGaze: { x: 0, y: 0 },
-    headYaw: 0,
-    headPitch: 0,
-  };
-  for (const gf of gazeBuffer) {
-    avg.leftGaze.x += gf.leftGaze.x;
-    avg.leftGaze.y += gf.leftGaze.y;
-    avg.rightGaze.x += gf.rightGaze.x;
-    avg.rightGaze.y += gf.rightGaze.y;
-    avg.headYaw += gf.headYaw;
-    avg.headPitch += gf.headPitch;
-  }
-  const n = gazeBuffer.length;
-  avg.leftGaze.x /= n;
-  avg.leftGaze.y /= n;
-  avg.rightGaze.x /= n;
-  avg.rightGaze.y /= n;
-  avg.headYaw /= n;
-  avg.headPitch /= n;
-  return avg;
-}
-
 function collectAndCallback(collectMs: number, cb: () => void) {
-  gazeBuffer = [];
+  frameBuffer = [];
+  frameCounter = 0;
   collecting.value = true;
   progress.value = 0;
 
   resultUnsub = onResult((data) => {
-    gazeBuffer.push(data.gazeFeatures);
+    frameCounter++;
+    if (frameCounter % SUBSAMPLE_RATE !== 0) return;
+    if (!data.eyePatches) return;
+
+    const features = buildFeatureVector(
+      data.eyePatches,
+      data.gazeFeatures.headYaw,
+      data.gazeFeatures.headPitch,
+      data.faceCenter,
+    );
+    frameBuffer.push(features);
   });
 
   setTimeout(() => {
-    gazeBuffer = [];
+    frameBuffer = [];
+    frameCounter = 0;
     const startTime = performance.now();
 
     const progressInterval = setInterval(() => {
@@ -133,12 +122,9 @@ function phase1ScreenPos(): Point2D {
 
 function startPhase1Point() {
   collectAndCallback(COLLECT_MS_P1, () => {
-    const avg = averageFeatures();
-    if (avg) {
-      samples.value.push({
-        features: avg,
-        screen: phase1ScreenPos(),
-      });
+    const screenPos = phase1ScreenPos();
+    for (const features of frameBuffer) {
+      samples.value.push({ features, screen: screenPos });
     }
     currentIndex.value++;
     if (currentIndex.value >= GRID.length) {
@@ -195,18 +181,24 @@ function generateRandomPoint() {
 function startPhase2Round() {
   lastResult.value = null;
   collectAndCallback(COLLECT_MS_P2, () => {
-    const avg = averageFeatures();
-    if (!avg || !currentTransform) {
+    if (frameBuffer.length === 0 || !currentTransform) {
       generateRandomPoint();
       setTimeout(() => startPhase2Round(), 300);
       return;
     }
 
-    const predicted = applyGazeTransform(currentTransform, avg);
     const actual: Point2D = {
       x: validationPoint.value.x * window.innerWidth,
       y: validationPoint.value.y * window.innerHeight,
     };
+
+    let sumX = 0, sumY = 0;
+    for (const features of frameBuffer) {
+      const pred = applyGazeTransform(currentTransform!, features);
+      sumX += pred.x;
+      sumY += pred.y;
+    }
+    const predicted = { x: sumX / frameBuffer.length, y: sumY / frameBuffer.length };
 
     const dist = Math.hypot(predicted.x - actual.x, predicted.y - actual.y);
     const isHit = dist < hitThreshold();
@@ -215,7 +207,9 @@ function startPhase2Round() {
     lastResult.value = isHit ? 'hit' : 'miss';
 
     if (!isHit) {
-      samples.value.push({ features: avg, screen: actual });
+      for (const features of frameBuffer) {
+        samples.value.push({ features, screen: actual });
+      }
       currentTransform = computeGazeTransform(samples.value) ?? currentTransform;
     }
 
@@ -272,6 +266,7 @@ onUnmounted(() => {
       <h2>Gaze Calibration</h2>
       <p>
         화면에 나타나는 점을 응시하세요.<br>
+        <strong>머리를 살짝 움직이면서</strong> 점을 계속 바라보세요.<br>
         9개 기본점 측정 후, 정확도 80%까지 자동 보정합니다.
       </p>
       <button class="btn" @click="startCalibration">시작</button>

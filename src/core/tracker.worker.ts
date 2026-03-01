@@ -10,8 +10,12 @@ type GazeFeatures = {
   headPitch: number;
 };
 
+type EyePatches = { left: Float32Array; right: Float32Array };
+
 interface TrackingResult {
   gazeFeatures: GazeFeatures;
+  eyePatches?: EyePatches;
+  faceCenter?: Point2D;
   gazeRatio?: Point2D;
   headPose?: EulerAngles;
   landmarks?: Point3D[];
@@ -124,6 +128,111 @@ function matrixToEuler(m: number[]): EulerAngles {
   };
 }
 
+// --- Inline: eye patch extraction ---
+const EYE_PATCH_W = 10;
+const EYE_PATCH_H = 6;
+
+let cropCanvas: OffscreenCanvas | null = null;
+let cropCtx: OffscreenCanvasRenderingContext2D | null = null;
+let patchCanvas: OffscreenCanvas | null = null;
+let patchCtx: OffscreenCanvasRenderingContext2D | null = null;
+
+function ensureCanvases() {
+  if (!cropCanvas) {
+    cropCanvas = new OffscreenCanvas(1, 1);
+    cropCtx = cropCanvas.getContext("2d")!;
+  }
+  if (!patchCanvas) {
+    patchCanvas = new OffscreenCanvas(EYE_PATCH_W, EYE_PATCH_H);
+    patchCtx = patchCanvas.getContext("2d")!;
+  }
+}
+
+function extractSingleEye(
+  frame: ImageBitmap,
+  fw: number,
+  fh: number,
+  corner1: Point3D,
+  corner2: Point3D,
+  top: Point3D,
+  bottom: Point3D,
+): Float32Array | null {
+  const xMin = Math.min(corner1.x, corner2.x);
+  const xMax = Math.max(corner1.x, corner2.x);
+  const yMin = Math.min(top.y, corner1.y, corner2.y);
+  const yMax = Math.max(bottom.y, corner1.y, corner2.y);
+
+  const marginX = (xMax - xMin) * 0.2;
+  const marginY = (yMax - yMin) * 0.3;
+
+  const sx = Math.max(0, Math.floor((xMin - marginX) * fw));
+  const sy = Math.max(0, Math.floor((yMin - marginY) * fh));
+  const sw = Math.min(fw - sx, Math.ceil((xMax - xMin + 2 * marginX) * fw));
+  const sh = Math.min(fh - sy, Math.ceil((yMax - yMin + 2 * marginY) * fh));
+
+  if (sw <= 0 || sh <= 0) return null;
+
+  cropCanvas!.width = sw;
+  cropCanvas!.height = sh;
+  cropCtx!.drawImage(frame, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  patchCtx!.drawImage(
+    cropCanvas!,
+    0,
+    0,
+    sw,
+    sh,
+    0,
+    0,
+    EYE_PATCH_W,
+    EYE_PATCH_H,
+  );
+
+  const imageData = patchCtx!.getImageData(0, 0, EYE_PATCH_W, EYE_PATCH_H);
+  const pixels = imageData.data;
+  const patch = new Float32Array(EYE_PATCH_W * EYE_PATCH_H);
+
+  for (let i = 0; i < patch.length; i++) {
+    const r = pixels[i * 4]!;
+    const g = pixels[i * 4 + 1]!;
+    const b = pixels[i * 4 + 2]!;
+    patch[i] = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+
+  return patch;
+}
+
+function extractEyePatches(
+  frame: ImageBitmap,
+  landmarks: Point3D[],
+): EyePatches | null {
+  ensureCanvases();
+  const fw = frame.width;
+  const fh = frame.height;
+
+  const left = extractSingleEye(
+    frame,
+    fw,
+    fh,
+    landmarks[33]!,
+    landmarks[133]!,
+    landmarks[159]!,
+    landmarks[145]!,
+  );
+  const right = extractSingleEye(
+    frame,
+    fw,
+    fh,
+    landmarks[362]!,
+    landmarks[263]!,
+    landmarks[386]!,
+    landmarks[374]!,
+  );
+
+  if (!left || !right) return null;
+  return { left, right };
+}
+
 // --- Load script via fetch + blob (bypasses CDN MIME type issues) ---
 async function loadScript(url: string) {
   const res = await fetch(url);
@@ -176,9 +285,9 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
   const t0 = performance.now();
   const result = faceLandmarker.detectForVideo(frame, timestamp);
   const inferenceMs = performance.now() - t0;
-  frame.close();
 
   if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+    frame.close();
     reply({
       type: "result",
       id,
@@ -200,24 +309,38 @@ function detect(frame: ImageBitmap, timestamp: number, id: number) {
   const gazeFeatures = computeGazeFeatures(landmarks);
   const gazeRatio = computeGazeRatio(landmarks);
 
+  // Extract eye patches BEFORE closing the frame
+  const eyePatches = extractEyePatches(frame, landmarks);
+  frame.close();
+
+  const nose = landmarks[1]!;
+  const faceCenter: Point2D = { x: nose.x, y: nose.y };
+
   let headPose: EulerAngles = { yaw: 0, pitch: 0, roll: 0 };
   if (result.facialTransformationMatrixes?.length > 0) {
     const matrix = result.facialTransformationMatrixes[0].data;
     headPose = matrixToEuler(Array.from(matrix));
   }
 
-  reply({
-    type: "result",
-    id,
-    data: {
-      gazeFeatures,
-      gazeRatio,
-      headPose,
-      landmarks,
-      inferenceMs,
-      timestamp,
-    },
-  });
+  const data: TrackingResult = {
+    gazeFeatures,
+    eyePatches: eyePatches ?? undefined,
+    faceCenter,
+    gazeRatio,
+    headPose,
+    landmarks,
+    inferenceMs,
+    timestamp,
+  };
+
+  if (eyePatches) {
+    (self as any).postMessage({ type: "result", id, data }, [
+      eyePatches.left.buffer,
+      eyePatches.right.buffer,
+    ]);
+  } else {
+    reply({ type: "result", id, data });
+  }
 }
 
 function reply(msg: WorkerOutMsg) {

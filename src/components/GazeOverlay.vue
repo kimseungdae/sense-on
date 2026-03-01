@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useTracker } from '../composables/useTracker';
 import { useCalibration } from '../composables/useCalibration';
-import { applyGazeTransform } from '../core/calibration';
+import { applyGazeTransform, buildFeatureVector } from '../core/calibration';
 import { createPointFilter } from '../core/filter';
 
 const COLS = 32;
@@ -44,8 +44,14 @@ onMounted(() => {
   window.addEventListener('resize', updateCellSize);
 
   unsub = onResult((data) => {
-    if (!transform.value) return;
-    const rawPos = applyGazeTransform(transform.value, data.gazeFeatures);
+    if (!transform.value || !data.eyePatches) return;
+    const features = buildFeatureVector(
+      data.eyePatches,
+      data.gazeFeatures.headYaw,
+      data.gazeFeatures.headPitch,
+      data.faceCenter,
+    );
+    const rawPos = applyGazeTransform(transform.value, features);
     const pos = screenFilter.filter(rawPos, data.timestamp);
 
     const col = clamp(Math.floor(pos.x / cellW.value), 0, COLS - 1);

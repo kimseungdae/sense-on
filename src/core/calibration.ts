@@ -1,29 +1,44 @@
-import type { GazeFeatures, Point2D } from "./types";
+import type { EyePatches, Point2D } from "./types";
 
 export interface GazeTransform {
   readonly xCoeffs: readonly number[];
   readonly yCoeffs: readonly number[];
   readonly featureMean: readonly number[];
   readonly featureStd: readonly number[];
+  readonly numFeatures: number;
 }
 
 export interface CalibrationSample {
-  features: GazeFeatures;
+  features: number[];
   screen: Point2D;
 }
 
-const NUM_FEATURES = 6; // lGx, lGy, rGx, rGy, fcX, fcY
-const NUM_PARAMS = NUM_FEATURES + 1; // + bias
+export function buildFeatureVector(
+  eyePatches: EyePatches | undefined,
+  headYaw: number,
+  headPitch: number,
+  faceCenter: Point2D | undefined,
+): number[] {
+  const features: number[] = [];
 
-function toFeatureVector(gf: GazeFeatures): number[] {
-  return [
-    gf.leftGaze.x,
-    gf.leftGaze.y,
-    gf.rightGaze.x,
-    gf.rightGaze.y,
-    gf.headYaw,
-    gf.headPitch,
-  ];
+  if (eyePatches) {
+    for (let i = 0; i < eyePatches.left.length; i++) {
+      features.push(eyePatches.left[i]!);
+    }
+    for (let i = 0; i < eyePatches.right.length; i++) {
+      features.push(eyePatches.right[i]!);
+    }
+  }
+
+  features.push(headYaw, headPitch);
+
+  if (faceCenter) {
+    features.push(faceCenter.x, faceCenter.y);
+  } else {
+    features.push(0.5, 0.5);
+  }
+
+  return features;
 }
 
 // NxN Gaussian elimination with partial pivoting
@@ -66,18 +81,20 @@ function buildAtA(
   rows: number[][],
   samples: CalibrationSample[],
   lambda: number,
+  numFeatures: number,
+  numParams: number,
 ): { AtA: number[][]; Atbx: number[]; Atby: number[] } {
-  const AtA: number[][] = Array.from({ length: NUM_PARAMS }, () =>
-    new Array(NUM_PARAMS).fill(0),
+  const AtA: number[][] = Array.from({ length: numParams }, () =>
+    new Array(numParams).fill(0),
   );
-  const Atbx = new Array<number>(NUM_PARAMS).fill(0);
-  const Atby = new Array<number>(NUM_PARAMS).fill(0);
+  const Atbx = new Array<number>(numParams).fill(0);
+  const Atby = new Array<number>(numParams).fill(0);
 
   for (let k = 0; k < rows.length; k++) {
     const f = rows[k]!;
     const s = samples[k]!;
-    for (let i = 0; i < NUM_PARAMS; i++) {
-      for (let j = 0; j < NUM_PARAMS; j++) {
+    for (let i = 0; i < numParams; i++) {
+      for (let j = 0; j < numParams; j++) {
         AtA[i]![j]! += f[i]! * f[j]!;
       }
       Atbx[i]! += f[i]! * s.screen.x;
@@ -86,7 +103,7 @@ function buildAtA(
   }
 
   // Ridge: add lambda to diagonal (skip bias at last index)
-  for (let i = 0; i < NUM_FEATURES; i++) {
+  for (let i = 0; i < numFeatures; i++) {
     AtA[i]![i]! += lambda;
   }
 
@@ -96,65 +113,76 @@ function buildAtA(
 // Ridge regression: (AᵀA + λI')β = Aᵀb with feature standardization
 export function computeGazeTransform(
   samples: CalibrationSample[],
-  lambda: number = 1.0,
+  lambda: number = 10.0,
 ): GazeTransform | null {
   const n = samples.length;
-  if (n < NUM_PARAMS) return null;
+  if (n === 0) return null;
 
-  const rawFeatures = samples.map((s) => toFeatureVector(s.features));
+  const numFeatures = samples[0]!.features.length;
+  const numParams = numFeatures + 1;
+
+  if (n < Math.min(numParams, 20)) return null;
+
+  const rawFeatures = samples.map((s) => s.features);
 
   // Compute mean and std per feature
-  const mean = new Array<number>(NUM_FEATURES).fill(0);
-  const std = new Array<number>(NUM_FEATURES).fill(0);
+  const mean = new Array<number>(numFeatures).fill(0);
+  const std = new Array<number>(numFeatures).fill(0);
 
   for (const f of rawFeatures) {
-    for (let i = 0; i < NUM_FEATURES; i++) mean[i]! += f[i]!;
+    for (let i = 0; i < numFeatures; i++) mean[i]! += f[i]!;
   }
-  for (let i = 0; i < NUM_FEATURES; i++) mean[i]! /= n;
+  for (let i = 0; i < numFeatures; i++) mean[i]! /= n;
 
   for (const f of rawFeatures) {
-    for (let i = 0; i < NUM_FEATURES; i++) {
+    for (let i = 0; i < numFeatures; i++) {
       std[i]! += (f[i]! - mean[i]!) ** 2;
     }
   }
-  for (let i = 0; i < NUM_FEATURES; i++) {
+  for (let i = 0; i < numFeatures; i++) {
     std[i] = Math.sqrt(std[i]! / n);
     if (std[i]! < 1e-10) std[i] = 1;
   }
 
   // Standardize and append bias
   const rows = rawFeatures.map((f) => {
-    const s = f.map((v, i) => (v! - mean[i]!) / std[i]!);
+    const s = f.map((v, i) => (v - mean[i]!) / std[i]!);
     s.push(1);
     return s;
   });
 
   // Solve for X coefficients
-  const { AtA, Atbx } = buildAtA(rows, samples, lambda);
+  const { AtA, Atbx } = buildAtA(rows, samples, lambda, numFeatures, numParams);
   const xCoeffs = solveLinearSystem(AtA, Atbx);
 
   // Rebuild AtA for Y (Gaussian elimination modifies in-place)
-  const { AtA: AtA2, Atby } = buildAtA(rows, samples, lambda);
+  const { AtA: AtA2, Atby } = buildAtA(
+    rows,
+    samples,
+    lambda,
+    numFeatures,
+    numParams,
+  );
   const yCoeffs = solveLinearSystem(AtA2, Atby);
 
   if (!xCoeffs || !yCoeffs) return null;
 
-  return { xCoeffs, yCoeffs, featureMean: mean, featureStd: std };
+  return { xCoeffs, yCoeffs, featureMean: mean, featureStd: std, numFeatures };
 }
 
 export function applyGazeTransform(
   t: GazeTransform,
-  gf: GazeFeatures,
+  features: number[],
 ): Point2D {
-  const raw = toFeatureVector(gf);
-  const f: number[] = raw.map(
+  const numParams = t.numFeatures + 1;
+  const f: number[] = features.map(
     (v, i) => (v - t.featureMean[i]!) / t.featureStd[i]!,
   );
   f.push(1);
 
   let sx = 0,
     sy = 0;
-  for (let i = 0; i < NUM_PARAMS; i++) {
+  for (let i = 0; i < numParams; i++) {
     sx += t.xCoeffs[i]! * f[i]!;
     sy += t.yCoeffs[i]! * f[i]!;
   }

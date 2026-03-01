@@ -1,9 +1,25 @@
-vision_wasm_internal.js:1 W0301 04:02:03.188000 2225904 face_landmarker_graph.cc:180] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
-custom_dbg @ vision_wasm_internal.js:1이 경고 이해하기
-vision_wasm_internal.js:1 I0301 04:02:03.257999 2225904 gl_context.cc:407] GL version: 3.0 (OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))), renderer: WebKit WebGL
-vision_wasm_internal.js:1 W0301 04:02:03.259000 2225904 gl_context.cc:1118] OpenGL error checking is disabled
-custom_dbg @ vision_wasm_internal.js:1이 경고 이해하기
-vision_wasm_internal.js:1 Graph successfully started running.
 vision_wasm_internal.js:1 INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
-put_char @ vision_wasm_internal.js:1이 오류 이해하기
-tracker.worker.ts:191 Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently
+put_char	@	vision_wasm_internal.js:1
+write	@	vision_wasm_internal.js:1
+write	@	vision_wasm_internal.js:1
+doWritev	@	vision_wasm_internal.js:1
+_fd_write	@	vision_wasm_internal.js:1
+$func16705	@	vision_wasm_internal.wasm:0x935867
+$func2835	@	vision_wasm_internal.wasm:0x164c01
+$func4608	@	vision_wasm_internal.wasm:0x2ad77e
+$func454	@	vision_wasm_internal.wasm:0x2242d
+$func3882	@	vision_wasm_internal.wasm:0x1f35e3
+$func3534	@	vision_wasm_internal.wasm:0x1bd395
+$func14503	@	vision_wasm_internal.wasm:0x7bae18
+$func13885	@	vision_wasm_internal.wasm:0x74f790
+$func11943	@	vision_wasm_internal.wasm:0x680caf
+$func3483	@	vision_wasm_internal.wasm:0x1b7da7
+$func3635	@	vision_wasm_internal.wasm:0x1d2db1
+$df	@	vision_wasm_internal.wasm:0x4de9d8
+finishProcessing	@	80b58123-ea1f-4734-9bd6-8abe9a71e4c4:1
+finishProcessing	@	80b58123-ea1f-4734-9bd6-8abe9a71e4c4:1
+dc	@	80b58123-ea1f-4734-9bd6-8abe9a71e4c4:1
+gc	@	80b58123-ea1f-4734-9bd6-8abe9a71e4c4:1
+G	@	80b58123-ea1f-4734-9bd6-8abe9a71e4c4:1
+detect	@	tracker.worker.ts:286
+self.onmessage	@	tracker.worker.ts:368

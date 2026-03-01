@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeGazeTransform,
   applyGazeTransform,
+  buildFeatureVector,
   type CalibrationSample,
 } from "../calibration";
 
@@ -78,7 +79,7 @@ describe("computeGazeTransform", () => {
     expect(Math.abs(centerRotated.y - H / 2)).toBeLessThan(200);
   });
 
-  it("handles noisy samples via ridge regression", () => {
+  it("handles noisy samples via ridge regression (legacy 6-feature)", () => {
     const W = 1920,
       H = 1080;
     const samples: CalibrationSample[] = [
@@ -100,5 +101,41 @@ describe("computeGazeTransform", () => {
     const center = applyGazeTransform(t, [0, 0, 0, 0, 0.0, 0.3]);
     expect(Math.abs(center.x - W / 2)).toBeLessThan(200);
     expect(Math.abs(center.y - H / 2)).toBeLessThan(200);
+  });
+});
+
+describe("buildFeatureVector", () => {
+  it("returns 124-dim vector with eyePatches", () => {
+    const patches = {
+      left: new Array(60).fill(0.5),
+      right: new Array(60).fill(0.3),
+    };
+    const v = buildFeatureVector(patches, 0.1, -0.05, { x: 0.5, y: 0.4 });
+    expect(v).toHaveLength(124);
+    expect(v[0]).toBe(0.5);
+    expect(v[60]).toBe(0.3);
+    expect(v[120]).toBe(0.1);
+    expect(v[121]).toBe(-0.05);
+    expect(v[122]).toBe(0.5);
+    expect(v[123]).toBe(0.4);
+  });
+
+  it("returns 124-dim vector with zero padding when eyePatches undefined", () => {
+    const v = buildFeatureVector(undefined, 0.1, -0.05, { x: 0.5, y: 0.4 });
+    expect(v).toHaveLength(124);
+    for (let i = 0; i < 120; i++) {
+      expect(v[i]).toBe(0);
+    }
+    expect(v[120]).toBe(0.1);
+    expect(v[121]).toBe(-0.05);
+    expect(v[122]).toBe(0.5);
+    expect(v[123]).toBe(0.4);
+  });
+
+  it("uses default faceCenter when undefined", () => {
+    const v = buildFeatureVector(undefined, 0, 0, undefined);
+    expect(v).toHaveLength(124);
+    expect(v[122]).toBe(0.5);
+    expect(v[123]).toBe(0.5);
   });
 });

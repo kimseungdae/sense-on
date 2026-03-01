@@ -44,7 +44,7 @@ onMounted(() => {
   window.addEventListener('resize', updateCellSize);
 
   unsub = onResult((data) => {
-    if (!transform.value || !data.eyePatches) return;
+    if (!transform.value || !data.faceCenter) return;
     const features = buildFeatureVector(
       data.eyePatches,
       data.gazeFeatures.headYaw,

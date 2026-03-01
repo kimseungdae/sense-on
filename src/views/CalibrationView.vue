@@ -78,7 +78,7 @@ function collectAndCallback(collectMs: number, cb: () => void) {
   resultUnsub = onResult((data) => {
     frameCounter++;
     if (frameCounter % SUBSAMPLE_RATE !== 0) return;
-    if (!data.eyePatches) return;
+    if (!data.faceCenter) return;
 
     const features = buildFeatureVector(
       data.eyePatches,
@@ -136,9 +136,10 @@ function startPhase1Point() {
 }
 
 function enterPhase2() {
+  console.log(`[calibration] samples: ${samples.value.length}, features: ${samples.value[0]?.features.length}`);
   currentTransform = computeGazeTransform(samples.value);
   if (!currentTransform) {
-    // Rare: degenerate samples, restart
+    console.warn(`[calibration] transform failed: ${samples.value.length} samples`);
     phase.value = 'intro';
     samples.value = [];
     return;

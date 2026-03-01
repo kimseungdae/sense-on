@@ -13,6 +13,8 @@ export interface CalibrationSample {
   screen: Point2D;
 }
 
+const EYE_PATCH_SIZE = 60; // 10x6 per eye
+
 export function buildFeatureVector(
   eyePatches: EyePatches | undefined,
   headYaw: number,
@@ -28,15 +30,15 @@ export function buildFeatureVector(
     for (let i = 0; i < eyePatches.right.length; i++) {
       features.push(eyePatches.right[i]!);
     }
+  } else {
+    for (let i = 0; i < EYE_PATCH_SIZE * 2; i++) features.push(0);
   }
 
   features.push(headYaw, headPitch);
-
-  if (faceCenter) {
-    features.push(faceCenter.x, faceCenter.y);
-  } else {
-    features.push(0.5, 0.5);
-  }
+  features.push(
+    faceCenter ? faceCenter.x : 0.5,
+    faceCenter ? faceCenter.y : 0.5,
+  );
 
   return features;
 }

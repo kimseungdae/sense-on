@@ -61,6 +61,23 @@ async function init(wasmPath: string, modelPath: string) {
   g.exports = {};
   g.module = { exports: g.exports };
 
+  // Shim document for MediaPipe bundle when eval'd in Worker (iOS Safari)
+  if (typeof g.document === "undefined") {
+    g.document = {
+      createElement(tag: string) {
+        if (tag === "canvas") {
+          return typeof OffscreenCanvas !== "undefined"
+            ? new OffscreenCanvas(300, 150)
+            : { getContext: () => null, width: 300, height: 150 };
+        }
+        return {};
+      },
+      createElementNS(_ns: string, tag: string) {
+        return g.document.createElement(tag);
+      },
+    };
+  }
+
   const cdnBase = wasmPath.replace(/\/wasm\/?$/, "");
   await loadScript(`${cdnBase}/vision_bundle.cjs`);
   const mp = g.module.exports;

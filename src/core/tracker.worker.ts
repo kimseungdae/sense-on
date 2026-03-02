@@ -39,8 +39,18 @@ function matrixToEuler(m: number[]): EulerAngles {
   };
 }
 
-function loadScript(url: string) {
-  importScripts(url);
+async function loadScript(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  const code = await res.text();
+  try {
+    const blob = new Blob([code], { type: "application/javascript" });
+    const blobUrl = URL.createObjectURL(blob);
+    importScripts(blobUrl);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    (0, eval)(code);
+  }
 }
 
 // --- Worker logic ---

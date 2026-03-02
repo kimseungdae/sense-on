@@ -29,10 +29,35 @@ export function createCameraStream(options: CameraOptions = {}): CameraStream {
   let fallbackCanvas: HTMLCanvasElement | null = null;
   let fallbackCtx: CanvasRenderingContext2D | null = null;
 
+  function computeCrop(): { sx: number; sy: number; sw: number; sh: number } {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw === 0 || vh === 0) return { sx: 0, sy: 0, sw: vw, sh: vh };
+
+    const targetAspect = inferenceWidth / inferenceHeight;
+    const videoAspect = vw / vh;
+
+    let sx = 0,
+      sy = 0,
+      sw = vw,
+      sh = vh;
+    if (videoAspect > targetAspect) {
+      sw = Math.round(vh * targetAspect);
+      sx = Math.round((vw - sw) / 2);
+    } else if (videoAspect < targetAspect) {
+      sh = Math.round(vw / targetAspect);
+      sy = Math.round((vh - sh) / 2);
+    }
+    return { sx, sy, sw, sh };
+  }
+
   async function grabFrame(): Promise<ImageBitmap | null> {
+    const { sx, sy, sw, sh } = computeCrop();
+    if (sw === 0 || sh === 0) return null;
+
     if (!useCanvasFallback) {
       try {
-        return await createImageBitmap(video, {
+        return await createImageBitmap(video, sx, sy, sw, sh, {
           resizeWidth: inferenceWidth,
           resizeHeight: inferenceHeight,
         });
@@ -47,7 +72,17 @@ export function createCameraStream(options: CameraOptions = {}): CameraStream {
       fallbackCtx = fallbackCanvas.getContext("2d");
     }
     if (!fallbackCtx) return null;
-    fallbackCtx.drawImage(video, 0, 0, inferenceWidth, inferenceHeight);
+    fallbackCtx.drawImage(
+      video,
+      sx,
+      sy,
+      sw,
+      sh,
+      0,
+      0,
+      inferenceWidth,
+      inferenceHeight,
+    );
     const imageData = fallbackCtx.getImageData(
       0,
       0,

@@ -25,3 +25,5 @@ public/models/*.task
 *.sln
 *.sw?
 package-lock.json
+.vercel
+.env*.local

@@ -10,8 +10,8 @@ export interface AttentionResult {
   facePresent: boolean;
 }
 
-const YAW_THRESHOLD = 25;
-const PITCH_THRESHOLD = 20;
+const YAW_THRESHOLD = 18;
+const PITCH_THRESHOLD = 15;
 const EAR_CLOSED = 0.2;
 
 const LEFT_EYE_TOP = 159;

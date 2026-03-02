@@ -30,8 +30,8 @@ let pendingState: AttentionState | null = null;
 let pendingAt = 0;
 let eyeClosedSince = 0;
 
-const yawFilter = createOneEuroFilter({ minCutoff: 1.0, beta: 0.3 });
-const pitchFilter = createOneEuroFilter({ minCutoff: 1.0, beta: 0.3 });
+const yawFilter = createOneEuroFilter({ minCutoff: 1.5, beta: 0.5 });
+const pitchFilter = createOneEuroFilter({ minCutoff: 1.5, beta: 0.5 });
 
 export function useAttention() {
   const attentionRate = computed(() =>

@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.1] - 2026-03-02
+
+### Fixed
+
+- Fix mobile camera loading failure caused by blob URL `importScripts()` in Web Worker (iOS Safari, Android)
+- Add canvas-based fallback for `createImageBitmap` resize options unsupported on iOS Safari
+- Display error messages on HomeView when tracker initialization fails
+- Increase tracker init timeout from 15s to 45s for slower mobile networks
+
 ## [0.1.0] - 2026-03-01
 
 Initial release of sense-on.
@@ -21,4 +30,5 @@ Initial release of sense-on.
 - Bilingual demo (English/Korean toggle)
 - 22 unit tests (attention, filter, head-pose)
 
+[0.1.1]: https://github.com/kimseungdae/sense-on/releases/tag/v0.1.1
 [0.1.0]: https://github.com/kimseungdae/sense-on/releases/tag/v0.1.0

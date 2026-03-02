@@ -21,6 +21,7 @@ export function createTrackerClient(
 ): TrackerClient {
   const wasmPath = options.wasmPath ?? DEFAULT_WASM_PATH;
   const modelPath = options.modelPath ?? DEFAULT_MODEL_PATH;
+  const initTimeout = options.initTimeout ?? 45_000;
 
   const worker = new Worker(new URL("./tracker.worker.ts", import.meta.url));
 
@@ -64,8 +65,8 @@ export function createTrackerClient(
       return new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           worker.removeEventListener("message", handler);
-          reject(new Error("Tracker init timeout (15s)"));
-        }, 15_000);
+          reject(new Error(`Tracker init timeout (${initTimeout / 1000}s)`));
+        }, initTimeout);
 
         const handler = (e: MessageEvent<WorkerOutMsg>) => {
           if (e.data.type === "ready") {

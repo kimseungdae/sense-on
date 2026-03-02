@@ -5,7 +5,7 @@ import { useTracker } from '../composables/useTracker';
 import { useI18n } from '../composables/useI18n';
 
 const router = useRouter();
-const { start, status } = useTracker();
+const { start, status, error } = useTracker();
 const { t, locale, toggleLocale } = useI18n();
 const loading = ref(false);
 
@@ -39,6 +39,12 @@ async function startAttention() {
         {{ loading ? t.cameraLoading : t.start }}
       </button>
     </div>
+
+    <p v-if="status === 'error'" class="error-msg">
+      {{ t.errorOccurred }}
+      <br>
+      <small>{{ error }}</small>
+    </p>
 
     <p class="note">
       {{ t.description }}<br>
@@ -121,6 +127,24 @@ h1 {
 .btn.primary {
   background: #4a90d9;
   color: white;
+}
+
+.error-msg {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: rgba(239, 83, 80, 0.1);
+  border: 1px solid #ef5350;
+  border-radius: 8px;
+  color: #ef5350;
+  font-size: 14px;
+  text-align: center;
+  max-width: 260px;
+}
+
+.error-msg small {
+  color: #888;
+  font-size: 12px;
+  word-break: break-word;
 }
 
 .note {

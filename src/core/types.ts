@@ -26,6 +26,7 @@ export interface TrackingResult {
 export interface TrackerClientOptions {
   wasmPath?: string;
   modelPath?: string;
+  initTimeout?: number;
 }
 
 // Main → Worker

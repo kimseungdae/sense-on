@@ -21,6 +21,7 @@ export const messages = {
     hours: "h ",
     minutes: "m ",
     seconds: "s",
+    errorOccurred: "Something went wrong. Please try again.",
   },
   ko: {
     subtitle: "아이 집중력 모니터링",
@@ -43,6 +44,7 @@ export const messages = {
     hours: "시간 ",
     minutes: "분 ",
     seconds: "초",
+    errorOccurred: "오류가 발생했습니다. 다시 시도해 주세요.",
   },
 } as const;
 

@@ -25,6 +25,32 @@ export function createCameraStream(options: CameraOptions = {}): CameraStream {
   let lastVideoTime = -1;
   const frameCbs = new Set<(frame: ImageBitmap) => void>();
 
+  let useCanvasFallback = false;
+  let fallbackCanvas: HTMLCanvasElement | null = null;
+  let fallbackCtx: CanvasRenderingContext2D | null = null;
+
+  async function grabFrame(): Promise<ImageBitmap | null> {
+    if (!useCanvasFallback) {
+      try {
+        return await createImageBitmap(video, {
+          resizeWidth: inferenceWidth,
+          resizeHeight: inferenceHeight,
+        });
+      } catch {
+        useCanvasFallback = true;
+      }
+    }
+    if (!fallbackCanvas) {
+      fallbackCanvas = document.createElement("canvas");
+      fallbackCanvas.width = inferenceWidth;
+      fallbackCanvas.height = inferenceHeight;
+      fallbackCtx = fallbackCanvas.getContext("2d");
+    }
+    if (!fallbackCtx) return null;
+    fallbackCtx.drawImage(video, 0, 0, inferenceWidth, inferenceHeight);
+    return createImageBitmap(fallbackCanvas);
+  }
+
   function frameLoop() {
     if (!active) return;
 
@@ -47,12 +73,11 @@ export function createCameraStream(options: CameraOptions = {}): CameraStream {
       return;
     }
 
-    createImageBitmap(video, {
-      resizeWidth: inferenceWidth,
-      resizeHeight: inferenceHeight,
-    })
+    grabFrame()
       .then((bitmap) => {
-        for (const cb of frameCbs) cb(bitmap);
+        if (bitmap) {
+          for (const cb of frameCbs) cb(bitmap);
+        }
         schedule();
       })
       .catch(() => {

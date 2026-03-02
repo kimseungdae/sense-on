@@ -46,7 +46,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "tsx scripts/setup-mediapipe.ts && vue-tsc -b && vite build",
     "build:lib": "vite build --config vite.config.lib.ts && vue-tsc --project tsconfig.lib.json",
     "test": "vitest run",
     "setup": "tsx scripts/setup-mediapipe.ts",

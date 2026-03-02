@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Center-crop camera frame to match display aspect ratio — fixes wireframe misalignment on 16:9 mobile cameras
 - Lower head pose thresholds (yaw 25°→18°, pitch 20°→15°) for more sensitive attention detection
 - Increase One-Euro filter responsiveness (minCutoff 1.0→1.5, beta 0.3→0.5) for faster head turn detection
+- Add `document` shim in Worker for MediaPipe eval fallback on iOS Safari (iPad)
 
 ## [0.1.0] - 2026-03-01
 

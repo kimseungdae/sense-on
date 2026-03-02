@@ -48,7 +48,13 @@ export function createCameraStream(options: CameraOptions = {}): CameraStream {
     }
     if (!fallbackCtx) return null;
     fallbackCtx.drawImage(video, 0, 0, inferenceWidth, inferenceHeight);
-    return createImageBitmap(fallbackCanvas);
+    const imageData = fallbackCtx.getImageData(
+      0,
+      0,
+      inferenceWidth,
+      inferenceHeight,
+    );
+    return createImageBitmap(imageData);
   }
 
   function frameLoop() {

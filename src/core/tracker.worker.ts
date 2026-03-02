@@ -69,18 +69,13 @@ async function init(wasmPath: string, modelPath: string) {
   const opts = {
     baseOptions: {
       modelAssetPath: modelPath,
-      delegate: "GPU" as const,
+      delegate: "CPU" as const,
     },
     runningMode: "VIDEO" as const,
     numFaces: 1,
     outputFacialTransformationMatrixes: true,
   };
-  try {
-    faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, opts);
-  } catch {
-    opts.baseOptions.delegate = "CPU" as any;
-    faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, opts);
-  }
+  faceLandmarker = await mp.FaceLandmarker.createFromOptions(vision, opts);
 }
 
 function detect(frame: ImageBitmap, timestamp: number, id: number) {
